@@ -4,15 +4,14 @@
  */
 require_once __DIR__ . '/config.php';
 
-// Уже авторизован — на главную
 if ($session->isLoggedIn()) {
     redirect('main.php');
 }
 
-$error = '';
+$error = flash('login_error') ?? '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Rate limiting: не более 10 попыток за 5 минут
+    $security->requireCsrf();
     if (!$security->checkRateLimit('login', 10, 300)) {
         $error = 'Слишком много попыток. Подождите несколько минут.';
     } else {
@@ -21,34 +20,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Заполните все поля.';
         } else {
             $username = $v->validated()['username'];
-            $password = $_POST['password'];
-
             $user = Database::getInstance()->selectOne(
                 'SELECT * FROM users WHERE username = ?',
                 [$username]
             );
-
-            if ($user && $security->verifyPassword($password, $user['password_hash'] ?? $user['password'] ?? '')) {
-                // Успех
+            if ($user && $security->verifyPassword($_POST['password'], $user['password_hash'] ?? $user['password'] ?? '')) {
                 $security->resetRateLimit('login');
+                // Регенерация ID защищает от session fixation
+                $session->destroy();
+                Session::getInstance();
+                session_start();
                 session_regenerate_id(true);
 
-                $_SESSION['user_id']   = $user['id'];
+                $_SESSION['user_id']   = (int)$user['id'];
                 $_SESSION['user_name'] = $user['full_name'];
-                $_SESSION['role_id']   = $user['role_id'];
+                $_SESSION['role_id']   = (int)$user['role_id'];
 
-                // Подтягиваем название роли
-                $role = Database::getInstance()->selectOne(
-                    'SELECT name FROM roles WHERE id = ?',
-                    [$user['role_id']]
-                );
+                $role = Database::getInstance()->selectOne('SELECT name FROM roles WHERE id = ?', [$user['role_id']]);
                 $_SESSION['role_name'] = $role['name'] ?? '';
 
-                $logger->info('User logged in', ['user' => $username]);
+                // Перехеш пароля на более сильный если нужно
+                if ($security->needsRehash($user['password_hash'] ?? '')) {
+                    Database::getInstance()->update('users',
+                        ['password_hash' => $security->hashPassword($_POST['password'])],
+                        'id = ?', [(int)$user['id']]
+                    );
+                }
+
+                $logger->info('User logged in', ['user' => $username, 'ip' => $_SERVER['REMOTE_ADDR'] ?? '']);
                 $session->flash('success', 'Добро пожаловать, ' . $user['full_name'] . '!');
                 redirect('main.php');
             } else {
-                $logger->warning('Failed login attempt', ['user' => $username]);
+                $logger->warning('Failed login', ['user' => $username, 'ip' => $_SERVER['REMOTE_ADDR'] ?? '']);
                 $error = 'Неверный логин или пароль.';
             }
         }
@@ -67,15 +70,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body class="login-page">
 <div class="login-card">
-    <div class="login-logo">
-        <i class="fas fa-building"></i>
-    </div>
+    <div class="login-logo"><i class="fas fa-building"></i></div>
     <h2><?= e(Config::getInstance()->getAppName()) ?></h2>
     <p class="login-subtitle">Вход в систему</p>
 
     <?php if ($error): ?>
     <div class="error-message">
         <i class="fas fa-circle-xmark"></i> <?= e($error) ?>
+    </div>
+    <?php endif; ?>
+
+    <?php
+    // Показываем флаш (напр., после выхода)
+    $infoMsg = flash('info');
+    if ($infoMsg): ?>
+    <div class="error-message" style="background:var(--accent);color:#fff">
+        <i class="fas fa-circle-info"></i> <?= e($infoMsg) ?>
     </div>
     <?php endif; ?>
 

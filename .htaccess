@@ -1,34 +1,40 @@
 # Портал v2 — Apache правила
 
-# Перенаправлять корень на index.php
 DirectoryIndex index.php
-
-# Запретить отображение списка каталогов
 Options -Indexes
 
-# Запретить прямой доступ к сенситивным директориям
+# Блокировать доступ к чувствительным директориям и файлам
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteRule ^(core|cache|data|logs|uploads)/  - [F,L]
-    RewriteRule ^(config\.php|auth\.php|\.env)$   - [F,L]
+    RewriteRule ^(core|cache|data|logs|uploads/temp)/  - [F,L]
+    RewriteRule ^(config\.php|auth\.php|\.env)$        - [F,L]
+    RewriteRule ^uploads/.*\.php$                       - [F,L]
+    RewriteRule ^nas\ config\.txt$                      - [F,L]
 </IfModule>
 
-# HTTP Security Headers
+# Security Headers
 <IfModule mod_headers.c>
     Header always set X-Frame-Options "SAMEORIGIN"
     Header always set X-Content-Type-Options "nosniff"
     Header always set X-XSS-Protection "1; mode=block"
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
     Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    # Content-Security-Policy: разрешаем свои скрипты, FontAwesome CDN и свой CSS
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' https://cdnjs.cloudflare.com; font-src 'self' https://cdnjs.cloudflare.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self'"
 </IfModule>
 
-# Запретить доступ к .env, логам, git-файлам
-<FilesMatch "^(\.env|\.env\.example|\.git|\.gitignore|.*\.log|.*\.cache)$">
+# Запретить доступ к сенситивным файлам
+<FilesMatch "(\.env|\.env\.example|\.git|\.gitignore|.*\.log|.*\.cache|nas\ config\.txt)$">
     Order Allow,Deny
     Deny from all
 </FilesMatch>
 
-# Запретить исполнение PHP-файлов в uploads/
-<IfModule mod_rewrite.c>
-    RewriteRule ^uploads/.*\.php$ - [F,L]
+# Кэширование статики
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css              "access plus 7 days"
+    ExpiresByType application/javascript "access plus 7 days"
+    ExpiresByType image/png             "access plus 30 days"
+    ExpiresByType image/jpeg            "access plus 30 days"
+    ExpiresByType image/svg+xml         "access plus 30 days"
 </IfModule>
