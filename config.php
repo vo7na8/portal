@@ -1,49 +1,25 @@
 <?php
 /**
- * Главный конфигурационный файл
- * Обновленная версия с модульной архитектурой
- * Обратно совместим со старым кодом
+ * Центральный конфигурационный файл
+ * Подключается в начале каждой страницы и обработчика.
+ * Обратно совместим со старым кодом.
  */
 
-// Автозагрузчик классов
-spl_autoload_register(function ($class) {
-    $prefix = '';
-    $base_dir = __DIR__ . '/';
-    
-    // Проверяем префикс namespace
-    $len = strlen($prefix);
-    if (strncmp($prefix, $class, $len) !== 0) {
-        // Нет совпадения, пробуем загрузить
-        $relative_class = str_replace('\\', '/', $class);
-        $file = $base_dir . $relative_class . '.php';
-        
-        if (file_exists($file)) {
-            require $file;
-        }
-    }
-});
-
-// Загружаем ядро системы
+// Загружаем ядро системы (порядок важен: Logger самый первый, т.к. Database/Session его используют)
 require_once __DIR__ . '/core/Config.php';
-require_once __DIR__ . '/core/Database.php';
-require_once __DIR__ . '/core/Security.php';
-require_once __DIR__ . '/core/Session.php';
 require_once __DIR__ . '/core/Logger.php';
+require_once __DIR__ . '/core/Database.php';
+require_once __DIR__ . '/core/Session.php';
+require_once __DIR__ . '/core/Security.php';
 require_once __DIR__ . '/core/Validator.php';
 
-use Core\Config;
-use Core\Database;
-use Core\Security;
-use Core\Session;
-use Core\Logger;
-
-// Инициализация компонентов
-$config = Config::getInstance();
-$session = Session::getInstance();
+// Инициализация
+$config   = Config::getInstance();
+$session  = Session::getInstance();   // запускает сессию
 $security = Security::getInstance();
-$logger = Logger::getInstance();
+$logger   = Logger::getInstance();
 
-// Настройка отображения ошибок в зависимости от окружения
+// Настройка отображения ошибок
 if ($config->isDevelopment() && $config->isDebug()) {
     ini_set('display_errors', '1');
     ini_set('display_startup_errors', '1');
@@ -52,250 +28,125 @@ if ($config->isDevelopment() && $config->isDebug()) {
     ini_set('display_errors', '0');
     ini_set('display_startup_errors', '0');
     error_reporting(E_ALL);
-    
-    // Логируем ошибки в production
-    set_error_handler(function($errno, $errstr, $errfile, $errline) use ($logger) {
-        $logger->error("PHP Error: $errstr", [
+    set_error_handler(function ($errno, $errstr, $errfile, $errline) use ($logger) {
+        if (!($errno & error_reporting())) return false;
+        $logger->error("PHP Error [{$errno}]: {$errstr}", [
             'file' => $errfile,
             'line' => $errline,
-            'errno' => $errno
         ]);
         return true;
     });
+    set_exception_handler(function (\Throwable $e) use ($logger) {
+        $logger->error('Uncaught exception: ' . $e->getMessage(), [
+            'file'  => $e->getFile(),
+            'line'  => $e->getLine(),
+        ]);
+        http_response_code(500);
+        die('Произошла ошибка. Подробности в логах.');
+    });
 }
 
-// Получаем PDO объект для обратной совместимости
+// Получаем $pdo для обратной совместимости (старый код использует $pdo напрямую)
 $pdo = Database::getInstance()->getPdo();
 
-/**
- * ===========================================
- * ОБРАТНАЯ СОВМЕСТИМОСТЬ - Старые функции
- * ===========================================
- */
+// =======================================================================
+// СТАРЫЕ ФУНКЦИИ (обратная совместимость со всеми pages/ и handlers/)
+// =======================================================================
 
-/**
- * Проверка авторизации
- * @deprecated Используйте Auth::requireAuth()
- */
-function requireAuth() {
-    if (!isset($_SESSION['user_id'])) {
-        header('Location: index.php');
-        exit;
-    }
+function requireAuth(): void {
+    Session::getInstance()->requireAuth('index.php');
 }
 
-/**
- * Получение имени пользователя
- * @deprecated Используйте User модель
- */
-function getUserName($pdo, $user_id) {
-    $stmt = $pdo->prepare("SELECT full_name FROM users WHERE id = ?");
+function getUserName(PDO $pdo, int $user_id): string {
+    $stmt = $pdo->prepare('SELECT full_name FROM users WHERE id = ?');
     $stmt->execute([$user_id]);
-    $row = $stmt->fetch();
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
     return $row ? $row['full_name'] : 'Неизвестно';
 }
 
-/**
- * Проверка наличия разрешения
- * @deprecated Используйте Auth::hasPermission()
- */
-function hasPermission($pdo, $permission_name) {
+function hasPermission(PDO $pdo, string $permission_name): bool {
     if (!isset($_SESSION['user_id'])) return false;
     $userId = $_SESSION['user_id'];
-    
-    $sql = "SELECT COUNT(*) FROM users u
+    $sql = 'SELECT COUNT(*) FROM users u
             JOIN role_permissions rp ON u.role_id = rp.role_id
             JOIN permissions p ON rp.permission_id = p.id
-            WHERE u.id = :user_id AND p.name = :perm";
-    
+            WHERE u.id = :user_id AND p.name = :perm';
     $stmt = $pdo->prepare($sql);
     $stmt->execute(['user_id' => $userId, 'perm' => $permission_name]);
     return $stmt->fetchColumn() > 0;
 }
 
-/**
- * Получение данных из кэша
- * @deprecated Используйте Cache класс
- */
-function cacheGet($key, $ttl = 300) {
+function cacheGet(string $key, int $ttl = 300): mixed {
     $cacheDir = __DIR__ . '/cache/';
-    if (!is_dir($cacheDir)) mkdir($cacheDir, 0777, true);
-    
+    if (!is_dir($cacheDir)) @mkdir($cacheDir, 0755, true);
     $file = $cacheDir . md5($key) . '.cache';
-    
     if (file_exists($file) && (time() - filemtime($file) < $ttl)) {
         return unserialize(file_get_contents($file));
     }
-    
     return null;
 }
 
-/**
- * Сохранение данных в кэш
- * @deprecated Используйте Cache класс
- */
-function cacheSet($key, $data) {
+function cacheSet(string $key, mixed $data): void {
     $cacheDir = __DIR__ . '/cache/';
-    if (!is_dir($cacheDir)) mkdir($cacheDir, 0777, true);
-    
+    if (!is_dir($cacheDir)) @mkdir($cacheDir, 0755, true);
     file_put_contents($cacheDir . md5($key) . '.cache', serialize($data));
 }
 
-/**
- * Удаление данных из кэша
- * @deprecated Используйте Cache класс
- */
-function cacheDelete($key) {
+function cacheDelete(string $key): void {
     $file = __DIR__ . '/cache/' . md5($key) . '.cache';
-    if (file_exists($file)) unlink($file);
+    if (file_exists($file)) @unlink($file);
 }
 
-/**
- * ===========================================
- * НОВЫЕ ГЛОБАЛЬНЫЕ ХЕЛПЕРЫ
- * ===========================================
- */
+// =======================================================================
+// НОВЫЕ ГЛОБАЛЬНЫЕ ХЕЛПЕРЫ
+// =======================================================================
 
-/**
- * Быстрый доступ к базе данных
- */
-if (!function_exists('db')) {
-    function db(): Database {
-        return Database::getInstance();
-    }
-}
-
-/**
- * Быстрый доступ к конфигурации
- */
-if (!function_exists('config')) {
-    function config(string $key = null, $default = null) {
-        $config = Config::getInstance();
-        return $key === null ? $config : $config->get($key, $default);
-    }
-}
-
-/**
- * Безопасный вывод (XSS защита)
- */
 if (!function_exists('e')) {
-    function e($value) {
+    function e(mixed $value): string {
         return Security::getInstance()->escape($value);
     }
 }
 
-/**
- * Генерация CSRF токена
- */
-if (!function_exists('csrf_token')) {
-    function csrf_token(): string {
-        return Security::getInstance()->generateCsrfToken();
-    }
-}
-
-/**
- * HTML поле с CSRF токеном
- */
 if (!function_exists('csrf_field')) {
     function csrf_field(): string {
         return Security::getInstance()->csrfField();
     }
 }
 
-/**
- * Редирект
- */
+if (!function_exists('csrf_token')) {
+    function csrf_token(): string {
+        return Security::getInstance()->generateCsrfToken();
+    }
+}
+
+if (!function_exists('flash')) {
+    function flash(string $key, mixed $value = null): mixed {
+        $s = Session::getInstance();
+        if ($value !== null) {
+            $s->flash($key, $value);
+            return null;
+        }
+        return $s->getFlash($key);
+    }
+}
+
 if (!function_exists('redirect')) {
-    function redirect(string $url, int $code = 302): void {
-        header("Location: $url", true, $code);
+    function redirect(string $url, int $code = 302): never {
+        header('Location: ' . $url, true, $code);
         exit;
     }
 }
 
-/**
- * Редирект назад
- */
-if (!function_exists('back')) {
-    function back(): void {
-        $referer = $_SERVER['HTTP_REFERER'] ?? 'index.php';
-        redirect($referer);
-    }
-}
-
-/**
- * Получение значения из $_POST с защитой
- */
-if (!function_exists('post')) {
-    function post(string $key, $default = null) {
-        return $_POST[$key] ?? $default;
-    }
-}
-
-/**
- * Получение значения из $_GET с защитой
- */
-if (!function_exists('get')) {
-    function get(string $key, $default = null) {
-        return $_GET[$key] ?? $default;
-    }
-}
-
-/**
- * Flash сообщение
- */
-if (!function_exists('flash')) {
-    function flash(string $key, $value = null) {
-        $session = Session::getInstance();
-        
-        if ($value === null) {
-            return $session->getFlash($key);
-        }
-        
-        $session->flash($key, $value);
-    }
-}
-
-/**
- * Логирование
- */
-if (!function_exists('logger')) {
-    function logger(): Logger {
-        return Logger::getInstance();
-    }
-}
-
-/**
- * Проверка окружения
- */
-if (!function_exists('is_development')) {
-    function is_development(): bool {
-        return Config::getInstance()->isDevelopment();
-    }
-}
-
-/**
- * Проверка production окружения
- */
-if (!function_exists('is_production')) {
-    function is_production(): bool {
-        return Config::getInstance()->isProduction();
-    }
-}
-
-/**
- * Форматирование даты
- */
 if (!function_exists('format_date')) {
     function format_date(string $date, string $format = 'd.m.Y'): string {
-        return date($format, strtotime($date));
+        $ts = strtotime($date);
+        return $ts ? date($format, $ts) : $date;
     }
 }
 
-/**
- * Форматирование даты и времени
- */
 if (!function_exists('format_datetime')) {
     function format_datetime(string $datetime, string $format = 'd.m.Y H:i'): string {
-        return date($format, strtotime($datetime));
+        $ts = strtotime($datetime);
+        return $ts ? date($format, $ts) : $datetime;
     }
 }
