@@ -1,106 +1,147 @@
 <?php
 /**
- * Core\Session - Управление сессиями
+ * Core\Session — управление сессией
+ * Flash-сообщения, безопасные настройки cookie.
  */
+class Session
+{
+    private static ?Session $instance = null;
 
-namespace Core;
+    private function __construct()
+    {
+        if (session_status() !== PHP_SESSION_NONE) {
+            return; // Сессия уже запущена
+        }
 
-class Session {
-    private static $instance = null;
-    private $started = false;
+        $config = Config::getInstance();
 
-    private function __construct() {
-        $this->start();
+        $lifetime = $config->getInt('SESSION_LIFETIME', 7200);
+        $name     = $config->get('SESSION_NAME', 'PORTAL_SESSION');
+        $strict   = $config->getBool('SESSION_STRICT', true);
+        $secure   = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+
+        session_name($name);
+
+        session_set_cookie_params([
+            'lifetime' => $lifetime,
+            'path'     => '/',
+            'domain'   => '',
+            'secure'   => $secure,
+            'httponly' => true,
+            'samesite' => 'Strict',
+        ]);
+
+        if ($strict) {
+            ini_set('session.use_strict_mode', '1');
+        }
+
+        ini_set('session.gc_maxlifetime', (string)$lifetime);
+        ini_set('session.use_only_cookies', '1');
+
+        session_start();
+
+        // Регенерация ID при первом старте для защиты от session fixation
+        if (!isset($_SESSION['_initiated'])) {
+            session_regenerate_id(true);
+            $_SESSION['_initiated'] = true;
+        }
     }
 
-    public static function getInstance(): self {
+    public static function getInstance(): self
+    {
         if (self::$instance === null) {
             self::$instance = new self();
         }
         return self::$instance;
     }
 
-    public function start(): void {
-        if ($this->started || session_status() === PHP_SESSION_ACTIVE) {
-            return;
-        }
-        
-        $config = Config::getInstance();
-        
-        // Безопасные настройки сессии
-        ini_set('session.cookie_httponly', '1');
-        ini_set('session.use_only_cookies', '1');
-        ini_set('session.cookie_secure', isset($_SERVER['HTTPS']) ? '1' : '0');
-        ini_set('session.cookie_samesite', 'Strict');
-        
-        session_name('PORTAL_SESSION');
-        session_start();
-        
-        $this->started = true;
-        
-        // Проверка IP и User-Agent
-        $this->validateSession();
-    }
+    // --- Базовые операции ---
 
-    private function validateSession(): void {
-        $currentIp = $_SERVER['REMOTE_ADDR'] ?? '';
-        $currentAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
-        
-        if (!isset($_SESSION['_ip'])) {
-            $_SESSION['_ip'] = $currentIp;
-            $_SESSION['_agent'] = $currentAgent;
-        } else {
-            // Проверяем IP и User-Agent
-            if ($_SESSION['_ip'] !== $currentIp || $_SESSION['_agent'] !== $currentAgent) {
-                $this->destroy();
-                Logger::getInstance()->warning('Session hijacking attempt detected', [
-                    'expected_ip' => $_SESSION['_ip'],
-                    'actual_ip' => $currentIp
-                ]);
-            }
-        }
-    }
-
-    public function get(string $key, $default = null) {
-        return $_SESSION[$key] ?? $default;
-    }
-
-    public function set(string $key, $value): void {
+    public function set(string $key, mixed $value): void
+    {
         $_SESSION[$key] = $value;
     }
 
-    public function has(string $key): bool {
+    public function get(string $key, mixed $default = null): mixed
+    {
+        return $_SESSION[$key] ?? $default;
+    }
+
+    public function has(string $key): bool
+    {
         return isset($_SESSION[$key]);
     }
 
-    public function remove(string $key): void {
+    public function remove(string $key): void
+    {
         unset($_SESSION[$key]);
     }
 
-    public function destroy(): void {
-        $_SESSION = [];
-        
-        if (isset($_COOKIE[session_name()])) {
-            setcookie(session_name(), '', time() - 3600, '/');
-        }
-        
-        session_destroy();
-        $this->started = false;
-    }
+    // --- Flash-сообщения ---
 
-    public function regenerate(): void {
-        session_regenerate_id(true);
-        $_SESSION['_ip'] = $_SERVER['REMOTE_ADDR'] ?? '';
-        $_SESSION['_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? '';
-    }
-
-    public function flash(string $key, $value): void {
+    /**
+     * Установить flash (будет доступно только на следующей странице)
+     */
+    public function flash(string $key, mixed $value): void
+    {
         $_SESSION['_flash'][$key] = $value;
     }
 
-    public function getFlash(string $key, $default = null) {
+    /**
+     * Прочитать и удалить flash
+     */
+    public function getFlash(string $key, mixed $default = null): mixed
+    {
         $value = $_SESSION['_flash'][$key] ?? $default;
         unset($_SESSION['_flash'][$key]);
         return $value;
+    }
+
+    public function hasFlash(string $key): bool
+    {
+        return isset($_SESSION['_flash'][$key]);
+    }
+
+    /**
+     * Получить все flash сразу и очистить
+     */
+    public function getAllFlash(): array
+    {
+        $all = $_SESSION['_flash'] ?? [];
+        unset($_SESSION['_flash']);
+        return $all;
+    }
+
+    // --- Завершение сессии ---
+
+    public function destroy(): void
+    {
+        $_SESSION = [];
+        if (ini_get('session.use_cookies')) {
+            $p = session_get_cookie_params();
+            setcookie(session_name(), '', time() - 42000,
+                $p['path'], $p['domain'], $p['secure'], $p['httponly']);
+        }
+        session_destroy();
+    }
+
+    // --- Утилиты ---
+
+    public function isLoggedIn(): bool
+    {
+        return isset($_SESSION['user_id']) && (int)$_SESSION['user_id'] > 0;
+    }
+
+    public function getUserId(): ?int
+    {
+        return isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
+    }
+
+    public function requireAuth(string $redirect = 'index.php'): void
+    {
+        if (!$this->isLoggedIn()) {
+            header('Location: ' . $redirect);
+            exit;
+        }
     }
 }
