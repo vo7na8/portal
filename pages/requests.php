@@ -1,82 +1,67 @@
 <?php
-require_once __DIR__ . '/../config.php';
-$status_filter = $_GET['status'] ?? 'all';
-$page = max(1, (int)($_GET['p'] ?? 1));
-$perPage = 20;
-$offset = ($page - 1) * $perPage;
+if (!hasPermission($pdo, 'view_requests')) { echo '<div class="empty-state"><i class="fas fa-lock"></i><p>Доступ запрещён.</p></div>'; return; }
+$db = Database::getInstance();
+$canAdd      = hasPermission($pdo, 'add_request');
+$canTake     = hasPermission($pdo, 'take_request');
+$canComplete = hasPermission($pdo, 'complete_request');
+$canReassign = hasPermission($pdo, 'reassign_request');
 
-$where = $status_filter != 'all' ? "WHERE r.status = :status" : "";
-$countSql = "SELECT COUNT(*) FROM requests r $where";
-$countStmt = $pdo->prepare($countSql);
-if ($status_filter != 'all') $countStmt->execute(['status' => $status_filter]); else $countStmt->execute();
-$total = $countStmt->fetchColumn();
-
-$sql = "SELECT r.*, u.full_name as assigned_name FROM requests r LEFT JOIN users u ON r.assigned_to = u.id $where ORDER BY r.created_at DESC LIMIT ? OFFSET ?";
-$stmt = $pdo->prepare($sql);
-$paramIndex = 1;
-if ($status_filter != 'all') {
-    $stmt->bindValue($paramIndex++, $status_filter, PDO::PARAM_STR);
-}
-$stmt->bindValue($paramIndex++, $perPage, PDO::PARAM_INT);
-$stmt->bindValue($paramIndex++, $offset, PDO::PARAM_INT);
-$stmt->execute();
-$requests = $stmt->fetchAll();
+$statusFilter = $_GET['status'] ?? '';
+$where  = $statusFilter ? 'WHERE r.status = ?' : '';
+$params = $statusFilter ? [$statusFilter] : [];
+$requests = $db->select("SELECT r.*, u.full_name as author_name, a.full_name as assigned_name
+    FROM requests r
+    LEFT JOIN users u ON r.author_id=u.id
+    LEFT JOIN users a ON r.assigned_to=a.id
+    {$where}
+    ORDER BY r.created_at DESC", $params);
+$statusMap = ['новая'=>'badge-new', 'в работе'=>'badge-progress', 'выполнена'=>'badge-done'];
 ?>
 <h2 class="section-title">Заявки</h2>
-<div class="period-selector">
-    <form method="get">
-        <input type="hidden" name="page" value="requests">
-        <label>Фильтр:</label>
-        <select name="status" onchange="this.form.submit()">
-            <option value="all" <?= $status_filter=='all'?'selected':'' ?>>Все</option>
-            <option value="новая" <?= $status_filter=='новая'?'selected':'' ?>>Новые</option>
-            <option value="в работе" <?= $status_filter=='в работе'?'selected':'' ?>>В работе</option>
-            <option value="выполнена" <?= $status_filter=='выполнена'?'selected':'' ?>>Выполненные</option>
-        </select>
-    </form>
-</div>
-<?php if (hasPermission($pdo, 'add_request')): ?>
+
+<?php if ($canAdd): ?>
 <div class="form-container">
-    <h3>Создать заявку</h3>
-    <form action="handlers/add_request.php" method="post">
-        <div class="form-group">
-            <label>Тема</label>
-            <input type="text" name="title" required>
-        </div>
-        <div class="form-group">
-            <label>Описание</label>
-            <textarea name="description" rows="3"></textarea>
-        </div>
-        <button type="submit" class="btn-primary">Создать</button>
+    <div class="card-title mb-2">Новая заявка</div>
+    <form method="post" action="handlers/add_request.php">
+        <?= csrf_field() ?>
+        <div class="form-group"><label>Тема</label><input type="text" name="title" required maxlength="255"></div>
+        <div class="form-group"><label>Описание</label><textarea name="description" required rows="2"></textarea></div>
+        <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Создать</button>
     </form>
 </div>
 <?php endif; ?>
+
 <div class="item-list">
-    <?php foreach ($requests as $req): ?>
+<?php if (empty($requests)): ?>
+    <div class="empty-state"><i class="fas fa-clipboard-list"></i><p>Заявок нет</p></div>
+<?php else: foreach ($requests as $r): ?>
     <div class="item-row">
-        <div>
-            <strong>#<?= $req['id'] ?>: <?= htmlspecialchars($req['title']) ?></strong><br>
-            <small><?= htmlspecialchars($req['description']) ?></small><br>
-            <small>Статус: <?= $req['status'] ?>, назначена: <?= $req['assigned_name'] ?? 'не назначена' ?></small>
+        <div style="flex:1;min-width:0">
+            <div class="flex" style="gap:.6rem;flex-wrap:wrap">
+                <span style="font-weight:500"><?= e($r['title']) ?></span>
+                <span class="badge <?= $statusMap[$r['status']] ?? 'badge-closed' ?>"><?= e($r['status']) ?></span>
+            </div>
+            <div class="text-muted mt-1" style="font-size:.85rem"><?= e($r['description']) ?></div>
+            <div class="text-muted mt-1" style="font-size:.78rem">
+                <i class="fas fa-user"></i> <?= e($r['author_name'] ?? '—') ?>
+                <?php if ($r['assigned_name']): ?> &nbsp;<i class="fas fa-user-check"></i> <?= e($r['assigned_name']) ?><?php endif; ?>
+                &nbsp;<i class="fas fa-clock"></i> <?= format_datetime($r['created_at']) ?>
+            </div>
         </div>
-        <div>
-            <?php if ($req['status'] == 'новая' && hasPermission($pdo, 'take_request')): ?>
-                <a href="handlers/take_request.php?id=<?= $req['id'] ?>" class="btn-take"><i class="fas fa-hand-paper"></i> Взять</a>
-            <?php endif; ?>
-            <?php if ($req['status'] == 'в работе' && hasPermission($pdo, 'complete_request')): ?>
-                <a href="handlers/complete_request.php?id=<?= $req['id'] ?>" class="btn-edit"><i class="fas fa-check"></i> Завершить</a>
-            <?php endif; ?>
-            <?php if (hasPermission($pdo, 'reassign_request')): ?>
-                <a href="handlers/reassign_request_form.php?id=<?= $req['id'] ?>" class="btn-edit"><i class="fas fa-exchange-alt"></i> Переназначить</a>
-            <?php endif; ?>
+        <div class="item-actions">
+        <?php if ($canTake && $r['status'] === 'новая'): ?>
+            <form method="post" action="handlers/take_request.php" style="display:inline">
+                <?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
+                <button type="submit" class="btn btn-success btn-sm">Взять</button>
+            </form>
+        <?php endif; ?>
+        <?php if ($canComplete && $r['status'] === 'в работе'): ?>
+            <form method="post" action="handlers/complete_request.php" style="display:inline">
+                <?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
+                <button type="submit" class="btn btn-secondary btn-sm">Закрыть</button>
+            </form>
+        <?php endif; ?>
         </div>
     </div>
-    <?php endforeach; ?>
+<?php endforeach; endif; ?>
 </div>
-<?php if ($total > $perPage): ?>
-<div class="pagination">
-    <?php for ($i = 1; $i <= ceil($total / $perPage); $i++): ?>
-        <a href="?page=requests&status=<?= $status_filter ?>&p=<?= $i ?>" class="<?= $i==$page?'active':'' ?>"><?= $i ?></a>
-    <?php endfor; ?>
-</div>
-<?php endif; ?>

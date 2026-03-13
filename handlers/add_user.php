@@ -1,13 +1,28 @@
 <?php
 require_once __DIR__ . '/../auth.php';
-if (!hasPermission($pdo, 'add_user')) die('Недостаточно прав');
-$username = trim($_POST['username'] ?? '');
-$password = $_POST['password'] ?? '';
-$full_name = trim($_POST['full_name'] ?? '');
-$role_id = $_POST['role_id'] ?? 0;
-if ($username === '' || $password === '' || $full_name === '' || !$role_id) die('Заполните все поля');
-$hash = password_hash($password, PASSWORD_DEFAULT);
-$stmt = $pdo->prepare("INSERT INTO users (username, password_hash, full_name, role_id) VALUES (?, ?, ?, ?)");
-$stmt->execute([$username, $hash, $full_name, $role_id]);
-header('Location: ../main.php?page=users');
-exit;
+if (!hasPermission($pdo, 'add_user')) { flash('error', 'Недостаточно прав'); redirect('main.php?page=users'); }
+$security->requireCsrf();
+$v = Validator::make($_POST);
+if (!$v->validate([
+    'username'  => 'required|username|min:3|max:50',
+    'full_name' => 'required|max:255',
+    'password'  => 'required|password',
+    'role_id'   => 'required|integer',
+])) {
+    flash('error', $v->firstErrorMessage());
+} else {
+    $d = $v->validated();
+    $exists = Database::getInstance()->selectValue('SELECT COUNT(*) FROM users WHERE username = ?', [$d['username']]);
+    if ($exists) {
+        flash('error', 'Пользователь с таким логином уже существует.');
+    } else {
+        Database::getInstance()->insert('users', [
+            'username'      => $d['username'],
+            'full_name'     => $d['full_name'],
+            'password_hash' => $security->hashPassword($_POST['password']),
+            'role_id'       => (int)$d['role_id'],
+        ]);
+        flash('success', 'Пользователь ' . $d['full_name'] . ' создан.');
+    }
+}
+redirect('main.php?page=users');

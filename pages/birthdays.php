@@ -1,63 +1,63 @@
 <?php
-require_once __DIR__ . '/../config.php';
-$page = max(1, (int)($_GET['p'] ?? 1));
-$perPage = 30;
-$offset = ($page - 1) * $perPage;
-$total = $pdo->query("SELECT COUNT(*) FROM birthdays")->fetchColumn();
-$stmt = $pdo->prepare("SELECT * FROM birthdays ORDER BY birth_date LIMIT ? OFFSET ?");
-$stmt->bindValue(1, $perPage, PDO::PARAM_INT);
-$stmt->bindValue(2, $offset, PDO::PARAM_INT);
-$stmt->execute();
-$birthdays = $stmt->fetchAll();
+if (!hasPermission($pdo, 'view_birthdays')) { echo '<div class="empty-state"><i class="fas fa-lock"></i><p>Доступ запрещён.</p></div>'; return; }
+$db        = Database::getInstance();
+$birthdays = $db->select("SELECT *, strftime('%m-%d', birth_date) md FROM birthdays ORDER BY md");
+$todayMd   = date('m-d');
+$canAdd    = hasPermission($pdo, 'add_birthday');
+$canDelete = hasPermission($pdo, 'delete_birthday');
+$canUpload = hasPermission($pdo, 'upload_birthdays');
 ?>
 <h2 class="section-title">Дни рождения</h2>
 
-<?php if (hasPermission($pdo, 'add_birthday')): ?>
+<?php if ($canUpload): ?>
 <div class="form-container">
-    <h3>➕ Добавить вручную</h3>
-    <form action="handlers/add_birthday.php" method="post">
-        <div class="form-group">
-            <label>ФИО</label>
-            <input type="text" name="full_name" required placeholder="Иванов Иван Иванович">
+    <div class="card-title mb-2"><i class="fas fa-file-csv" style="margin-right:.4rem;color:var(--accent-green)"></i>Загрузить из CSV</div>
+    <form method="post" action="handlers/upload_birthdays.php" enctype="multipart/form-data">
+        <?= csrf_field() ?>
+        <div class="upload-area">
+            <i class="fas fa-file-arrow-up"></i>
+            <p>Перетащите CSV сюда или <strong>нажмите</strong></p>
+            <p class="text-muted mt-1" style="font-size:.8rem">Формат: full_name, birth_date (YYYY-MM-DD)</p>
+            <p class="upload-filename text-muted mt-1" style="font-size:.8rem"></p>
+            <input type="file" name="csv_file" accept=".csv" style="display:none">
         </div>
-        <div class="form-group">
-            <label>Дата рождения</label>
-            <input type="date" name="birth_date" required value="<?= date('Y-m-d') ?>">
-            <small style="color: var(--text-secondary);">В формате ГГГГ-ММ-ДД</small>
-        </div>
-        <button type="submit" class="btn-primary">Добавить</button>
+        <button type="submit" class="btn btn-primary mt-2"><i class="fas fa-upload"></i> Загрузить</button>
     </form>
 </div>
 <?php endif; ?>
 
-<?php if (hasPermission($pdo, 'add_birthday')): ?>
-<div class="excel-upload">
-    <i class="fas fa-file-excel" style="font-size: 2.5rem;"></i>
-    <p>Загрузите список дней рождений в формате CSV (поля: full_name, birth_date)</p>
-    <a href="/portal/templates/birthday_template.csv" class="btn-template" download>📥 Скачать шаблон</a>
-    <form action="handlers/upload_birthdays.php" method="post" enctype="multipart/form-data">
-        <input type="file" name="birthday_file" accept=".csv" required>
-        <button type="submit" class="btn-upload">Загрузить</button>
+<?php if ($canAdd): ?>
+<div class="form-container">
+    <div class="card-title mb-2">Добавить запись</div>
+    <form method="post" action="handlers/add_birthday.php">
+        <?= csrf_field() ?>
+        <div class="form-row">
+            <div class="form-group"><label>ФИО</label><input type="text" name="full_name" required maxlength="255"></div>
+            <div class="form-group"><label>Дата рождения</label><input type="date" name="birth_date" required></div>
+        </div>
+        <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Добавить</button>
     </form>
 </div>
 <?php endif; ?>
 
 <div class="item-list">
-    <?php foreach ($birthdays as $b): ?>
-    <div class="item-row">
+<?php if (empty($birthdays)): ?>
+    <div class="empty-state"><i class="fas fa-cake-candles"></i><p>Список пуст</p></div>
+<?php else: foreach ($birthdays as $b): $isToday = $b['md'] === $todayMd; ?>
+    <div class="item-row" <?= $isToday ? 'style="border-left:3px solid var(--accent-pink)"' : '' ?>>
         <div>
-            <?= htmlspecialchars($b['full_name']) ?> — <?= date('d.m.Y', strtotime($b['birth_date'])) ?>
+            <span style="font-weight:500"><?= e($b['full_name']) ?></span>
+            <?php if ($isToday): ?><span class="badge badge-progress" style="margin-left:.5rem">🎉 Сегодня!</span><?php endif; ?>
+            <div class="text-muted mt-1" style="font-size:.85rem"><i class="fas fa-cake-candles"></i> <?= format_date($b['birth_date'], 'd.m') ?></div>
         </div>
-        <?php if (hasPermission($pdo, 'delete_birthday')): ?>
-        <a href="handlers/delete_birthday.php?id=<?= $b['id'] ?>" class="btn-delete delete-confirm"><i class="fas fa-trash"></i></a>
+        <?php if ($canDelete): ?>
+        <div class="item-actions">
+            <form method="post" action="handlers/delete_birthday.php" style="display:inline">
+                <?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$b['id'] ?>">
+                <button class="btn btn-danger btn-sm" data-confirm="Удалить?"><i class="fas fa-trash"></i></button>
+            </form>
+        </div>
         <?php endif; ?>
     </div>
-    <?php endforeach; ?>
+<?php endforeach; endif; ?>
 </div>
-<?php if ($total > $perPage): ?>
-<div class="pagination">
-    <?php for ($i = 1; $i <= ceil($total / $perPage); $i++): ?>
-        <a href="?page=birthdays&p=<?= $i ?>" class="<?= $i==$page?'active':'' ?>"><?= $i ?></a>
-    <?php endfor; ?>
-</div>
-<?php endif; ?>

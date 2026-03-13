@@ -1,9 +1,13 @@
 <?php
 require_once __DIR__ . '/../auth.php';
-if (!hasPermission($pdo, 'delete_equipment')) die('Недостаточно прав');
-$id = $_GET['id'] ?? 0;
-$stmt = $pdo->prepare("DELETE FROM equipment WHERE id = ?");
-$stmt->execute([$id]);
-cacheDelete('equipment_list');
-header('Location: ../main.php?page=equipment');
-exit;
+if (!hasPermission($pdo, 'delete_equipment')) { flash('error', 'Недостаточно прав'); redirect('main.php?page=equipment'); }
+$security->requireCsrf();
+$id = (int)($_POST['id'] ?? 0);
+if ($id > 0) {
+    Database::getInstance()->delete('equipment', 'id = ?', [$id]);
+    cacheDelete('equipment_list');
+    flash('success', 'Техника удалена.');
+} else {
+    flash('error', 'Неверный запрос.');
+}
+redirect('main.php?page=equipment');

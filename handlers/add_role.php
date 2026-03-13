@@ -1,10 +1,16 @@
 <?php
 require_once __DIR__ . '/../auth.php';
-if (!hasPermission($pdo, 'manage_roles')) die('Недостаточно прав');
-$name = trim($_POST['name'] ?? '');
-$description = trim($_POST['description'] ?? '');
-if ($name === '') die('Введите название роли');
-$stmt = $pdo->prepare("INSERT INTO roles (name, description) VALUES (?, ?)");
-$stmt->execute([$name, $description]);
-header('Location: ../main.php?page=roles');
-exit;
+if (!hasPermission($pdo, 'manage_roles')) { flash('error', 'Недостаточно прав'); redirect('main.php?page=roles'); }
+$security->requireCsrf();
+$v = Validator::make($_POST);
+if (!$v->validate(['name' => 'required|max:100', 'description' => 'nullable|max:255'])) {
+    flash('error', $v->firstErrorMessage());
+} else {
+    $d = $v->validated();
+    Database::getInstance()->insert('roles', [
+        'name'        => $d['name'],
+        'description' => $d['description'] ?? '',
+    ]);
+    flash('success', 'Роль создана.');
+}
+redirect('main.php?page=roles');
