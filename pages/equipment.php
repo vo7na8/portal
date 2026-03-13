@@ -1,77 +1,128 @@
 <?php
-require_once __DIR__ . '/../config.php';
-
-// Обработка удаления (если есть разрешение)
-if (isset($_GET['delete']) && hasPermission($pdo, 'delete_equipment')) {
-    $id = (int)$_GET['delete'];
-    $stmt = $pdo->prepare("DELETE FROM equipment WHERE id = ?");
-    $stmt->execute([$id]);
-    cacheDelete('equipment_list');
-    header('Location: equipment.php');
-    exit;
+if (!hasPermission($pdo, 'view_equipment')) {
+    echo '<div class="empty-state"><i class="fas fa-lock"></i><p>Доступ запрещён.</p></div>';
+    return;
 }
+$db         = Database::getInstance();
+$canAdd     = hasPermission($pdo, 'add_equipment');
+$canDelete  = hasPermission($pdo, 'delete_equipment');
+$canComment = hasPermission($pdo, 'add_comment');
 
+// Список техники (с кэшем)
 $equipments = cacheGet('equipment_list', 600);
 if (!$equipments) {
-    $equipments = $pdo->query("SELECT * FROM equipment ORDER BY id")->fetchAll();
-    cacheSet('equipment_list', $equipments);
+    $equipments = $db->select('SELECT * FROM equipment ORDER BY name');
+    if ($equipments) cacheSet('equipment_list', $equipments);
 }
+
+// Статусы
+$statusMap = [
+    'рабочее'      => 'badge-done',
+    'неисправное'  => 'badge-new',
+    'на ремонте'   => 'badge-progress',
+    'списано'       => 'badge-closed',
+];
 ?>
 <h2 class="section-title">Техника</h2>
 
-<?php if (hasPermission($pdo, 'add_equipment')): ?>
+<?php if ($canAdd): ?>
 <div class="form-container">
-    <h3>Добавить оборудование</h3>
-    <form action="handlers/add_equipment.php" method="post">
-        <div class="form-group">
-            <label>Название</label>
-            <input type="text" name="name" required>
+    <div class="card-title mb-2">Добавить оборудование</div>
+    <form method="post" action="handlers/add_equipment.php">
+        <?= csrf_field() ?>
+        <div class="form-row">
+            <div class="form-group"><label>Название</label><input type="text" name="name" required maxlength="255"></div>
+            <div class="form-group"><label>Тип</label><input type="text" name="type" required maxlength="100"></div>
         </div>
-        <div class="form-group">
-            <label>Описание</label>
-            <textarea name="description" rows="3"></textarea>
+        <div class="form-row">
+            <div class="form-group"><label>Расположение</label><input type="text" name="location" required maxlength="255"></div>
+            <div class="form-group"><label>Инвентарный номер</label><input type="text" name="inventory_no" maxlength="100"></div>
         </div>
-        <button type="submit" class="btn-primary">Добавить</button>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Статус</label>
+                <select name="status" required>
+                    <option value="рабочее">Рабочее</option>
+                    <option value="неисправное">Неисправное</option>
+                    <option value="на ремонте">На ремонте</option>
+                    <option value="списано">Списано</option>
+                </select>
+            </div>
+            <div class="form-group"><label>Ответственный</label><input type="text" name="responsible" maxlength="255"></div>
+        </div>
+        <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Добавить</button>
     </form>
 </div>
 <?php endif; ?>
 
+<?php if (empty($equipments)): ?>
+<div class="empty-state"><i class="fas fa-screwdriver-wrench"></i><p>Техники пока нет</p></div>
+<?php else: ?>
 <div class="item-list">
-    <?php foreach ($equipments as $eq): ?>
-    <div class="item-row">
-        <div>
-            <strong><?= htmlspecialchars($eq['name']) ?></strong><br>
-            <small><?= htmlspecialchars($eq['description']) ?></small>
-        </div>
-        <div>
-            <?php if (hasPermission($pdo, 'edit_equipment')): ?>
-                <a href="handlers/edit_equipment.php?id=<?= $eq['id'] ?>" class="btn-edit"><i class="fas fa-pen"></i></a>
-            <?php endif; ?>
-            <?php if (hasPermission($pdo, 'delete_equipment')): ?>
-                <a href="?delete=<?= $eq['id'] ?>" class="btn-delete delete-confirm" onclick="return confirm('Удалить оборудование?')"><i class="fas fa-trash"></i></a>
-            <?php endif; ?>
-        </div>
-    </div>
-    <?php if (hasPermission($pdo, 'add_comment')): ?>
-    <div class="comment-section">
-        <form action="handlers/add_comment.php" method="post">
-            <input type="hidden" name="equipment_id" value="<?= $eq['id'] ?>">
-            <input type="text" name="comment" class="comment-input" placeholder="Ваш комментарий" required>
-            <button type="submit" class="btn-comment">Отправить</button>
-        </form>
-        <div class="comment-list">
-            <?php
-            $stmt = $pdo->prepare("SELECT c.*, u.full_name FROM comments c JOIN users u ON c.user_id = u.id WHERE c.equipment_id = ? ORDER BY c.created_at DESC");
-            $stmt->execute([$eq['id']]);
-            $comments = $stmt->fetchAll();
-            ?>
-            <?php foreach ($comments as $c): ?>
-            <div class="comment-item">
-                <strong><?= htmlspecialchars($c['full_name']) ?>:</strong> <?= htmlspecialchars($c['comment']) ?> <small><?= $c['created_at'] ?></small>
+<?php foreach ($equipments as $eq):
+    $eqId    = (int)$eq['id'];
+    $comments = $db->select(
+        'SELECT c.*, u.full_name FROM comments c JOIN users u ON c.user_id=u.id WHERE c.equipment_id=? ORDER BY c.created_at DESC',
+        [$eqId]
+    );
+?>
+    <div>
+        <div class="item-row">
+            <div style="flex:1;min-width:0">
+                <div class="flex" style="gap:.6rem;flex-wrap:wrap">
+                    <span style="font-weight:500"><?= e($eq['name']) ?></span>
+                    <span class="badge <?= $statusMap[$eq['status'] ?? ''] ?? 'badge-closed' ?>"><?= e($eq['status'] ?? '') ?></span>
+                </div>
+                <div class="text-muted mt-1" style="font-size:.82rem">
+                    <i class="fas fa-tag"></i> <?= e($eq['type'] ?? '') ?>
+                    &nbsp;<i class="fas fa-location-dot"></i> <?= e($eq['location'] ?? '') ?>
+                    <?php if (!empty($eq['inventory_no'])): ?>&nbsp;<i class="fas fa-barcode"></i> <?= e($eq['inventory_no']) ?><?php endif; ?>
+                    <?php if (!empty($eq['responsible'])): ?>&nbsp;<i class="fas fa-user-tie"></i> <?= e($eq['responsible']) ?><?php endif; ?>
+                </div>
             </div>
-            <?php endforeach; ?>
+            <div class="item-actions">
+                <?php if ($canComment): ?>
+                <button class="btn btn-secondary btn-sm" data-toggle-comments="comments-<?= $eqId ?>">
+                    <i class="fas fa-comments"></i> <?= count($comments) ?>
+                </button>
+                <?php endif; ?>
+                <?php if ($canDelete): ?>
+                <form method="post" action="handlers/delete_equipment.php" style="display:inline">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="id" value="<?= $eqId ?>">
+                    <button class="btn btn-danger btn-sm" data-confirm="Удалить оборудование?">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </form>
+                <?php endif; ?>
+            </div>
         </div>
+
+        <?php if ($canComment): ?>
+        <div id="comments-<?= $eqId ?>" style="display:none;padding:.8rem 1.2rem;background:var(--bg-content);border-top:1px solid var(--border)">
+            <form method="post" action="handlers/add_comment.php" class="flex" style="gap:.6rem;margin-bottom:.8rem">
+                <?= csrf_field() ?>
+                <input type="hidden" name="equipment_id" value="<?= $eqId ?>">
+                <input type="text" name="comment" placeholder="Напишите комментарий…" required
+                    style="flex:1;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-xl);padding:.55rem 1rem;color:var(--text-primary);outline:none;font-size:.9rem">
+                <button type="submit" class="btn btn-primary btn-sm">Отправить</button>
+            </form>
+            <?php if (empty($comments)): ?>
+            <p class="text-muted" style="font-size:.85rem">Комментариев пока нет</p>
+            <?php else: ?>
+            <div class="comment-list">
+                <?php foreach ($comments as $c): ?>
+                <div class="comment-item">
+                    <strong><?= e($c['full_name']) ?></strong>
+                    <span class="comment-date"><?= format_datetime($c['created_at']) ?></span><br>
+                    <span style="font-size:.88rem"><?= e($c['comment']) ?></span>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
     </div>
-    <?php endif; ?>
-    <?php endforeach; ?>
+<?php endforeach; ?>
 </div>
+<?php endif; ?>

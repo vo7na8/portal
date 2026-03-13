@@ -1,74 +1,110 @@
 <?php
-require_once __DIR__ . '/../config.php';
 if (!hasPermission($pdo, 'manage_roles')) {
-    echo "<p>Доступ запрещён.</p>";
+    echo '<div class="empty-state"><i class="fas fa-lock"></i><p>Доступ запрещён.</p></div>';
     return;
 }
-
-// Получение списка ролей с количеством пользователей
-$roles = $pdo->query("
-    SELECT r.*, (SELECT COUNT(*) FROM users WHERE role_id = r.id) as user_count
-    FROM roles r
-    ORDER BY r.id
-")->fetchAll();
-
-// Получение всех разрешений
-$permissions = $pdo->query("SELECT * FROM permissions ORDER BY id")->fetchAll();
-
-// Для каждой роли получим её разрешения
-$role_perms = [];
+$db = Database::getInstance();
+$roles = $db->select('
+    SELECT r.*, (SELECT COUNT(*) FROM users WHERE role_id=r.id) user_count
+    FROM roles r ORDER BY r.id
+');
+$permissions = $db->select('SELECT * FROM permissions ORDER BY name');
+$rolePerms   = [];
 foreach ($roles as $r) {
-    $stmt = $pdo->prepare("SELECT permission_id FROM role_permissions WHERE role_id = ?");
-    $stmt->execute([$r['id']]);
-    $role_perms[$r['id']] = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    $rolePerms[$r['id']] = $db->select(
+        'SELECT permission_id FROM role_permissions WHERE role_id=?',
+        [$r['id']]
+    );
+    $rolePerms[$r['id']] = array_column($rolePerms[$r['id']], 'permission_id');
 }
+// Группируем пермиссии по префиксу
+$permGroups = [];
+foreach ($permissions as $p) {
+    $prefix = explode('_', $p['name'])[0];
+    $permGroups[$prefix][] = $p;
+}
+$groupLabels = [
+    'view'     => 'Просмотр',
+    'add'      => 'Добавление',
+    'edit'     => 'Редактирование',
+    'delete'   => 'Удаление',
+    'take'     => 'Взять в работу',
+    'complete' => 'Завершение',
+    'reassign' => 'Переназначение',
+    'upload'   => 'Загрузка',
+    'manage'   => 'Управление',
+];
 ?>
-<h2 class="section-title">Управление ролями и правами</h2>
+<h2 class="section-title">Роли и права</h2>
 
+<!-- Новая роль -->
 <div class="form-container">
-    <h3>Создать новую роль</h3>
-    <form action="handlers/add_role.php" method="post">
-        <div class="form-group">
-            <label>Название роли</label>
-            <input type="text" name="name" required>
+    <div class="card-title mb-2">Создать роль</div>
+    <form method="post" action="handlers/add_role.php">
+        <?= csrf_field() ?>
+        <div class="form-row">
+            <div class="form-group"><label>Название</label><input type="text" name="name" required maxlength="100"></div>
+            <div class="form-group"><label>Описание</label><input type="text" name="description" maxlength="255"></div>
         </div>
-        <div class="form-group">
-            <label>Описание</label>
-            <textarea name="description" rows="2"></textarea>
-        </div>
-        <button type="submit" class="btn-primary">Создать</button>
+        <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Создать</button>
     </form>
 </div>
 
-<div class="item-list">
-    <?php foreach ($roles as $role): ?>
-    <div class="item-row" style="flex-direction: column; align-items: start;">
-        <div style="display: flex; justify-content: space-between; width: 100%;">
-            <div>
-                <strong><?= htmlspecialchars($role['name']) ?></strong><br>
-                <small><?= htmlspecialchars($role['description']) ?></small><br>
-                <small>Пользователей: <?= $role['user_count'] ?></small>
-            </div>
-            <?php if ($role['name'] !== 'admin'): // защита от удаления базовых ролей ?>
-                <a href="handlers/delete_role.php?id=<?= $role['id'] ?>" class="btn-delete delete-confirm" onclick="return confirm('Удалить роль? Пользователи этой роли останутся без роли!')"><i class="fas fa-trash"></i></a>
+<!-- Матрица прав -->
+<?php foreach ($roles as $role):
+    $rid = (int)$role['id'];
+?>
+<div class="card mt-2">
+    <div class="card-header">
+        <div>
+            <span class="card-title"><?= e($role['name']) ?></span>
+            <?php if ($role['description']): ?>
+            <span class="text-muted" style="font-size:.85rem;margin-left:.5rem"><?= e($role['description']) ?></span>
             <?php endif; ?>
+            <span class="badge badge-new" style="margin-left:.6rem">
+                <i class="fas fa-users" style="font-size:.7rem"></i> <?= (int)$role['user_count'] ?>
+            </span>
         </div>
-        <div style="margin-top: 10px; width: 100%;">
-            <h4>Разрешения:</h4>
-            <form action="handlers/update_role_permissions.php" method="post">
-                <input type="hidden" name="role_id" value="<?= $role['id'] ?>">
-                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 5px;">
-                    <?php foreach ($permissions as $perm): ?>
-                        <label style="display: flex; align-items: center; gap: 5px;">
-                            <input type="checkbox" name="perms[]" value="<?= $perm['id'] ?>" 
-                                <?= in_array($perm['id'], $role_perms[$role['id']] ?? []) ? 'checked' : '' ?>>
-                            <?= htmlspecialchars($perm['name']) ?>
-                        </label>
-                    <?php endforeach; ?>
-                </div>
-                <button type="submit" class="btn-primary" style="margin-top: 10px;">Сохранить права</button>
-            </form>
-        </div>
+        <?php if (strtolower($role['name']) !== 'admin'): ?>
+        <form method="post" action="handlers/delete_role.php" style="display:inline">
+            <?= csrf_field() ?>
+            <input type="hidden" name="id" value="<?= $rid ?>">
+            <button class="btn btn-danger btn-sm" data-confirm="Удалить роль?"
+                    <?= $role['user_count'] > 0 ? 'disabled title="Есть пользователи"' : '' ?>>
+                <i class="fas fa-trash"></i>
+            </button>
+        </form>
+        <?php endif; ?>
     </div>
-    <?php endforeach; ?>
+
+    <form method="post" action="handlers/update_role_permissions.php">
+        <?= csrf_field() ?>
+        <input type="hidden" name="role_id" value="<?= $rid ?>">
+
+        <?php foreach ($permGroups as $prefix => $perms): ?>
+        <div style="margin-bottom:.8rem">
+            <div class="text-muted" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.4rem">
+                <?= e($groupLabels[$prefix] ?? $prefix) ?>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:.5rem">
+            <?php foreach ($perms as $p):
+                $checked = in_array($p['id'], $rolePerms[$rid] ?? [], false);
+                $short   = preg_replace('/^' . preg_quote($prefix, '/') . '_/', '', $p['name']);
+            ?>
+                <label style="display:inline-flex;align-items:center;gap:.35rem;background:var(--bg-content);border:1px solid var(--border);border-radius:var(--radius-md);padding:.25rem .7rem;font-size:.82rem;cursor:pointer;transition:border-color .15s"
+                    onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+                    <input type="checkbox" name="permissions[]" value="<?= (int)$p['id'] ?>" <?= $checked ? 'checked' : '' ?>
+                        style="accent-color:var(--accent);width:14px;height:14px">
+                    <?= e($short) ?>
+                </label>
+            <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+
+        <button type="submit" class="btn btn-secondary btn-sm mt-1">
+            <i class="fas fa-floppy-disk"></i> Сохранить права
+        </button>
+    </form>
 </div>
+<?php endforeach; ?>
