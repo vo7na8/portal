@@ -1,17 +1,12 @@
 /**
- * ПОРТАЛ v2.0 — Общие скрипты
+ * PORTAL v2.0 — Scripts
  */
 
 document.addEventListener('DOMContentLoaded', function () {
 
-    // ==========================================
-    // TOAST авто-скрытие
-    // ==========================================
-    const toasts = document.querySelectorAll('.toast');
-    toasts.forEach(function (toast) {
-        setTimeout(function () {
-            dismissToast(toast);
-        }, 4500);
+    // Тоасты авто-скрытие
+    document.querySelectorAll('.toast').forEach(function (toast) {
+        setTimeout(function () { dismissToast(toast); }, 4500);
     });
 
     function dismissToast(toast) {
@@ -19,22 +14,17 @@ document.addEventListener('DOMContentLoaded', function () {
         setTimeout(function () { toast.remove(); }, 280);
     }
 
-    // ==========================================
     // Подтверждение удаления
-    // ==========================================
     document.addEventListener('click', function (e) {
         var btn = e.target.closest('[data-confirm]');
         if (!btn) return;
-        var message = btn.getAttribute('data-confirm') || 'Вы уверены?';
-        if (!confirm(message)) {
+        if (!confirm(btn.getAttribute('data-confirm') || 'Вы уверены?')) {
             e.preventDefault();
             e.stopPropagation();
         }
     });
 
-    // ==========================================
-    // Боковая панель: hover на узких экранах
-    // ==========================================
+    // Сайдбар: hover на мобильных
     var sidebar = document.getElementById('sidebar');
     if (sidebar && window.innerWidth <= 768) {
         sidebar.addEventListener('mouseenter', function () {
@@ -49,36 +39,32 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // ==========================================
-    // Авто-скрытие форм добавления (toggle)
-    // ==========================================
+    // Toggle формы
     document.querySelectorAll('[data-toggle-form]').forEach(function (btn) {
         btn.addEventListener('click', function () {
             var target = document.getElementById(btn.getAttribute('data-toggle-form'));
             if (!target) return;
             var isHidden = target.style.display === 'none' || target.style.display === '';
             target.style.display = isHidden ? 'block' : 'none';
-            // Прокрутить к форме
             if (isHidden) target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         });
     });
 
-    // ==========================================
-    // Авто-скрытие комментариев устройств (toggle)
-    // ==========================================
+    // Toggle комментариев — сохраняем иконку + обновляем текст рядом
     document.querySelectorAll('[data-toggle-comments]').forEach(function (btn) {
+        var iconEl  = btn.querySelector('i');
+        var countEl = btn.querySelector('.comment-count');
         btn.addEventListener('click', function () {
-            var target = document.getElementById(btn.getAttribute('data-toggle-comments'));
+            var target  = document.getElementById(btn.getAttribute('data-toggle-comments'));
             if (!target) return;
             var isHidden = target.style.display === 'none' || target.style.display === '';
             target.style.display = isHidden ? 'block' : 'none';
-            btn.textContent = isHidden ? 'Скрыть комментарии' : 'Комментарии';
+            if (iconEl) iconEl.className = isHidden ? 'fas fa-comments-slash' : 'fas fa-comments';
+            btn.title = isHidden ? 'Скрыть' : 'Комментарии';
         });
     });
 
-    // ==========================================
-    // Drag-and-drop для зон загрузки
-    // ==========================================
+    // Drag-and-drop загрузка
     document.querySelectorAll('.upload-area').forEach(function (area) {
         area.addEventListener('dragover', function (e) {
             e.preventDefault();
@@ -96,13 +82,13 @@ document.addEventListener('DOMContentLoaded', function () {
             var input = area.querySelector('input[type=file]');
             if (input && e.dataTransfer.files.length) {
                 input.files = e.dataTransfer.files;
-                // Показать имя файла
                 var nameEl = area.querySelector('.upload-filename');
                 if (nameEl) nameEl.textContent = e.dataTransfer.files[0].name;
             }
         });
-        // Клик по зоне открывает диалог файла
-        area.addEventListener('click', function () {
+        area.addEventListener('click', function (e) {
+            // Не затрагивать клик по кнопке submit внутри zone
+            if (e.target.tagName === 'BUTTON' || e.target.type === 'submit') return;
             var input = area.querySelector('input[type=file]');
             if (input) input.click();
         });
@@ -110,18 +96,24 @@ document.addEventListener('DOMContentLoaded', function () {
         if (fileInput) {
             fileInput.addEventListener('change', function () {
                 var nameEl = area.querySelector('.upload-filename');
-                if (nameEl && fileInput.files.length) {
-                    nameEl.textContent = fileInput.files[0].name;
-                }
+                if (nameEl && fileInput.files.length) nameEl.textContent = fileInput.files[0].name;
             });
         }
+    });
+
+    // Авто-резайз textarea
+    document.querySelectorAll('textarea').forEach(function (ta) {
+        ta.addEventListener('input', function () {
+            ta.style.height = 'auto';
+            ta.style.height = Math.min(ta.scrollHeight, 320) + 'px';
+        });
     });
 
 });
 
 /**
  * Программное создание toast
- * Использование: showToast('success', 'Сохранено!')
+ * showToast('success', 'Сохранено!')
  */
 function showToast(type, message) {
     var icons = { success: 'fa-circle-check', error: 'fa-circle-xmark', warning: 'fa-triangle-exclamation', info: 'fa-circle-info' };
@@ -135,10 +127,16 @@ function showToast(type, message) {
     var toast = document.createElement('div');
     toast.className = 'toast toast-' + type;
     toast.setAttribute('role', 'alert');
-    toast.innerHTML =
-        '<i class="fas ' + (icons[type] || 'fa-circle-info') + '"></i>' +
-        '<span>' + message + '</span>' +
-        '<button class="toast-close" onclick="this.parentElement.remove()">&times;</button>';
+    // Безопасное ОТОБРАЖЕНИЕ: message не вставляем через innerHTML
+    var icon = document.createElement('i');
+    icon.className = 'fas ' + (icons[type] || 'fa-circle-info');
+    var text = document.createElement('span');
+    text.textContent = message;
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'toast-close';
+    closeBtn.textContent = '\u00d7';
+    closeBtn.addEventListener('click', function () { toast.remove(); });
+    toast.append(icon, text, closeBtn);
     container.appendChild(toast);
     setTimeout(function () {
         toast.classList.add('hide');

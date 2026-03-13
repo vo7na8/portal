@@ -14,5 +14,7 @@ $db->transaction(function ($db) use ($role_id, $permissions) {
         }
     }
 });
+// Сбрасываем кэш прав всех пользователей роли (без PHP-session handler-а нельзя пробежаться — чистим текущую)
+clearPermissionsCache();
 flash('success', 'Права роли обновлены.');
 redirect('main.php?page=roles');

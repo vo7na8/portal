@@ -1,8 +1,34 @@
-Options -Indexes
-DirectoryIndex main.php
+# Портал v2 — Apache правила
 
-<IfModule mod_expires.c>
-    ExpiresActive On
-    ExpiresByType text/css "access plus 1 month"
-    ExpiresByType application/javascript "access plus 1 month"
+# Перенаправлять корень на index.php
+DirectoryIndex index.php
+
+# Запретить отображение списка каталогов
+Options -Indexes
+
+# Запретить прямой доступ к сенситивным директориям
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(core|cache|data|logs|uploads)/  - [F,L]
+    RewriteRule ^(config\.php|auth\.php|\.env)$   - [F,L]
+</IfModule>
+
+# HTTP Security Headers
+<IfModule mod_headers.c>
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+</IfModule>
+
+# Запретить доступ к .env, логам, git-файлам
+<FilesMatch "^(\.env|\.env\.example|\.git|\.gitignore|.*\.log|.*\.cache)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# Запретить исполнение PHP-файлов в uploads/
+<IfModule mod_rewrite.c>
+    RewriteRule ^uploads/.*\.php$ - [F,L]
 </IfModule>
