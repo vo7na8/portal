@@ -8,10 +8,8 @@ $canAddDep   = hasPermission($pdo, 'add_department');
 $canEditDep  = hasPermission($pdo, 'edit_department');
 $canDelDep   = hasPermission($pdo, 'delete_department');
 
-// FIX #1: загружаем ВСЕ подразделения (включая дочерние) для отображения дерева
-$allDivisions = $db->select('SELECT id, name, short_name, parent_id FROM divisions ORDER BY sort_order, name');
+$allDivisions = $db->select('SELECT id, name, short_name, parent_id, sort_order FROM divisions ORDER BY sort_order, name');
 
-// Строим дерево
 function buildTree(array $items, $parentId = null): array {
     $branch = [];
     foreach ($items as $item) {
@@ -23,9 +21,7 @@ function buildTree(array $items, $parentId = null): array {
     }
     return $branch;
 }
-$divisionTree = buildTree($allDivisions);
-
-// Плоский список для select родителя
+$divisionTree     = buildTree($allDivisions);
 $allDivisionsFlat = $allDivisions;
 ?>
 <h2 class="section-title">Структура организации</h2>
@@ -58,7 +54,6 @@ $allDivisionsFlat = $allDivisions;
 <?php else: ?>
 <div class="item-list">
 <?php
-// Рекурсивная функция отображения
 function renderDivision(array $dv, $db, $canAddDep, $canEditDiv, $canDelDiv, $canEditDep, $canDelDep, $allDivisionsFlat, $pdo, $depth = 0): void {
     $dvId  = (int)$dv['id'];
     $depts = $db->select(
@@ -74,7 +69,6 @@ function renderDivision(array $dv, $db, $canAddDep, $canEditDiv, $canDelDiv, $ca
     $indent    = $depth > 0 ? 'margin-left:' . ($depth * 20) . 'px;' : '';
 ?>
 <div class="card mb-1" style="<?= $indent ?>">
-    <!-- Подразделение -->
     <div class="item-row">
         <div style="flex:1">
             <div style="font-weight:600;font-size:1.05rem">
@@ -110,7 +104,6 @@ function renderDivision(array $dv, $db, $canAddDep, $canEditDiv, $canDelDiv, $ca
         </div>
     </div>
 
-    <!-- Форма добавления отделения -->
     <?php if ($canAddDep): ?>
     <div id="adddep-<?= $dvId ?>" style="display:none;padding:.8rem 1.2rem;border-top:1px solid var(--border);background:var(--bg-content)">
         <div class="card-title mb-1" style="font-size:.9rem">Новое отделение</div>
@@ -143,13 +136,16 @@ function renderDivision(array $dv, $db, $canAddDep, $canEditDiv, $canDelDiv, $ca
                         <?php endforeach; ?>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label>Порядок сортировки</label>
+                    <input type="number" name="sort_order" value="<?= (int)$dv['sort_order'] ?>" min="0" style="width:80px">
+                </div>
             </div>
             <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-floppy-disk"></i> Сохранить</button>
         </form>
     </div>
     <?php endif; ?>
 
-    <!-- Отделения -->
     <?php if (!empty($depts)): ?>
     <div style="padding:.4rem 1.2rem .8rem;">
     <?php foreach ($depts as $dep):
@@ -187,6 +183,10 @@ function renderDivision(array $dv, $db, $canAddDep, $canEditDiv, $canDelDiv, $ca
                 <div class="form-row">
                     <div class="form-group"><label>Название</label><input type="text" name="name" value="<?= e($dep['name']) ?>" required maxlength="255"></div>
                     <div class="form-group"><label>Краткое</label><input type="text" name="short_name" value="<?= e($dep['short_name'] ?? '') ?>" maxlength="50"></div>
+                    <div class="form-group">
+                        <label>Порядок сортировки</label>
+                        <input type="number" name="sort_order" value="<?= (int)$dep['sort_order'] ?>" min="0" style="width:80px">
+                    </div>
                 </div>
                 <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-floppy-disk"></i> Сохранить</button>
             </form>
@@ -197,7 +197,6 @@ function renderDivision(array $dv, $db, $canAddDep, $canEditDiv, $canDelDiv, $ca
     </div>
     <?php endif; ?>
 
-    <!-- Дочерние подразделения -->
     <?php if (!empty($dv['children'])): ?>
     <?php foreach ($dv['children'] as $child): ?>
     <?php renderDivision($child, $db, $canAddDep, $canEditDiv, $canDelDiv, $canEditDep, $canDelDep, $allDivisionsFlat, $pdo, $depth + 1); ?>
