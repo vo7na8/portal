@@ -8,17 +8,25 @@ $canAddDep   = hasPermission($pdo, 'add_department');
 $canEditDep  = hasPermission($pdo, 'edit_department');
 $canDelDep   = hasPermission($pdo, 'delete_department');
 
-$divisions = $db->select(
-    'SELECT dv.*,
-        COUNT(DISTINCT d.id) AS dept_count,
-        COUNT(DISTINCT e.id) AS emp_count
-     FROM divisions dv
-     LEFT JOIN departments d ON d.division_id = dv.id
-     LEFT JOIN employees e ON e.department_id = d.id AND e.is_active = 1
-     WHERE dv.parent_id IS NULL
-     GROUP BY dv.id ORDER BY dv.sort_order, dv.name'
-);
-$allDivisions = $db->select('SELECT id, name FROM divisions ORDER BY name');
+// FIX #1: загружаем ВСЕ подразделения (включая дочерние) для отображения дерева
+$allDivisions = $db->select('SELECT id, name, short_name, parent_id FROM divisions ORDER BY sort_order, name');
+
+// Строим дерево
+function buildTree(array $items, $parentId = null): array {
+    $branch = [];
+    foreach ($items as $item) {
+        $itemParent = $item['parent_id'] === null ? null : (int)$item['parent_id'];
+        if ($itemParent === $parentId) {
+            $item['children'] = buildTree($items, (int)$item['id']);
+            $branch[] = $item;
+        }
+    }
+    return $branch;
+}
+$divisionTree = buildTree($allDivisions);
+
+// Плоский список для select родителя
+$allDivisionsFlat = $allDivisions;
 ?>
 <h2 class="section-title">Структура организации</h2>
 
@@ -34,7 +42,7 @@ $allDivisions = $db->select('SELECT id, name FROM divisions ORDER BY name');
                 <label>Входит в подразделение (родитель)</label>
                 <select name="parent_id">
                     <option value="">— верхний уровень —</option>
-                    <?php foreach ($allDivisions as $dv): ?>
+                    <?php foreach ($allDivisionsFlat as $dv): ?>
                     <option value="<?= (int)$dv['id'] ?>"><?= e($dv['name']) ?></option>
                     <?php endforeach; ?>
                 </select>
@@ -45,32 +53,38 @@ $allDivisions = $db->select('SELECT id, name FROM divisions ORDER BY name');
 </div>
 <?php endif; ?>
 
-<?php if (empty($divisions)): ?>
+<?php if (empty($divisionTree)): ?>
 <div class="empty-state"><i class="fas fa-sitemap"></i><p>Структура пуста</p></div>
 <?php else: ?>
 <div class="item-list">
-<?php foreach ($divisions as $dv):
-    $dvId   = (int)$dv['id'];
-    $depts  = $db->select(
-        'SELECT d.*,
-            COUNT(e.id) AS emp_count
+<?php
+// Рекурсивная функция отображения
+function renderDivision(array $dv, $db, $canAddDep, $canEditDiv, $canDelDiv, $canEditDep, $canDelDep, $allDivisionsFlat, $pdo, $depth = 0): void {
+    $dvId  = (int)$dv['id'];
+    $depts = $db->select(
+        'SELECT d.*, COUNT(e.id) AS emp_count
          FROM departments d
          LEFT JOIN employees e ON e.department_id = d.id AND e.is_active = 1
          WHERE d.division_id = ?
          GROUP BY d.id ORDER BY d.sort_order, d.name',
         [$dvId]
     );
+    $empCount  = $db->selectValue('SELECT COUNT(e.id) FROM departments d LEFT JOIN employees e ON e.department_id=d.id AND e.is_active=1 WHERE d.division_id=?', [$dvId]) ?? 0;
+    $deptCount = count($depts);
+    $indent    = $depth > 0 ? 'margin-left:' . ($depth * 20) . 'px;' : '';
 ?>
-<div class="card mb-1">
+<div class="card mb-1" style="<?= $indent ?>">
     <!-- Подразделение -->
     <div class="item-row">
         <div style="flex:1">
-            <div style="font-weight:600;font-size:1.05rem"><?= e($dv['name']) ?>
+            <div style="font-weight:600;font-size:1.05rem">
+                <?php if ($depth > 0): ?><i class="fas fa-level-up-alt fa-rotate-90 text-muted" style="font-size:.75rem;margin-right:.3rem"></i><?php endif; ?>
+                <?= e($dv['name']) ?>
                 <?php if ($dv['short_name']): ?><span class="text-muted" style="font-size:.85rem;font-weight:400"> (<?= e($dv['short_name']) ?>)</span><?php endif; ?>
             </div>
             <div class="text-muted" style="font-size:.82rem">
-                <i class="fas fa-door-open"></i> Отделений: <?= (int)$dv['dept_count'] ?>
-                &nbsp;<i class="fas fa-user"></i> Сотрудников: <?= (int)$dv['emp_count'] ?>
+                <i class="fas fa-door-open"></i> Отделений: <?= $deptCount ?>
+                &nbsp;<i class="fas fa-user"></i> Сотрудников: <?= (int)$empCount ?>
             </div>
         </div>
         <div class="item-actions">
@@ -80,7 +94,7 @@ $allDivisions = $db->select('SELECT id, name FROM divisions ORDER BY name');
             </button>
             <?php endif; ?>
             <?php if ($canEditDiv): ?>
-            <button class="btn btn-secondary btn-sm" data-toggle-comments="divedit-<?= $dvId ?>">
+            <button class="btn btn-secondary btn-sm" data-toggle-comments="divedit-<?= $dvId ?>" title="Редактировать">
                 <i class="fas fa-pen"></i>
             </button>
             <?php endif; ?>
@@ -120,6 +134,15 @@ $allDivisions = $db->select('SELECT id, name FROM divisions ORDER BY name');
             <div class="form-row">
                 <div class="form-group"><label>Название</label><input type="text" name="name" value="<?= e($dv['name']) ?>" required maxlength="255"></div>
                 <div class="form-group"><label>Краткое</label><input type="text" name="short_name" value="<?= e($dv['short_name'] ?? '') ?>" maxlength="50"></div>
+                <div class="form-group">
+                    <label>Родительское подразделение</label>
+                    <select name="parent_id">
+                        <option value="">— верхний уровень —</option>
+                        <?php foreach ($allDivisionsFlat as $opt): if ((int)$opt['id'] === $dvId) continue; ?>
+                        <option value="<?= (int)$opt['id'] ?>" <?= (int)($dv['parent_id'] ?? 0) === (int)$opt['id'] ? 'selected' : '' ?>><?= e($opt['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
             </div>
             <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-floppy-disk"></i> Сохранить</button>
         </form>
@@ -141,7 +164,7 @@ $allDivisions = $db->select('SELECT id, name FROM divisions ORDER BY name');
             </div>
             <div class="flex" style="gap:.3rem">
                 <?php if ($canEditDep): ?>
-                <button class="btn btn-secondary btn-sm" data-toggle-comments="depedit-<?= $depId ?>">
+                <button class="btn btn-secondary btn-sm" data-toggle-comments="depedit-<?= $depId ?>" title="Редактировать">
                     <i class="fas fa-pen"></i>
                 </button>
                 <?php endif; ?>
@@ -173,6 +196,19 @@ $allDivisions = $db->select('SELECT id, name FROM divisions ORDER BY name');
     <?php endforeach; ?>
     </div>
     <?php endif; ?>
+
+    <!-- Дочерние подразделения -->
+    <?php if (!empty($dv['children'])): ?>
+    <?php foreach ($dv['children'] as $child): ?>
+    <?php renderDivision($child, $db, $canAddDep, $canEditDiv, $canDelDiv, $canEditDep, $canDelDep, $allDivisionsFlat, $pdo, $depth + 1); ?>
+    <?php endforeach; ?>
+    <?php endif; ?>
 </div>
-<?php endforeach; endif; ?>
+<?php
+}
+foreach ($divisionTree as $dv) {
+    renderDivision($dv, $db, $canAddDep, $canEditDiv, $canDelDiv, $canEditDep, $canDelDep, $allDivisionsFlat, $pdo);
+}
+?>
 </div>
+<?php endif; ?>

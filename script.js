@@ -50,17 +50,19 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    // Toggle комментариев — сохраняем иконку + обновляем текст рядом
+    // FIX #2: Toggle комментариев — сохраняем оригинальную иконку и восстанавливаем при закрытии
     document.querySelectorAll('[data-toggle-comments]').forEach(function (btn) {
         var iconEl  = btn.querySelector('i');
-        var countEl = btn.querySelector('.comment-count');
+        var origClass = iconEl ? iconEl.className : null; // запоминаем исходный класс
         btn.addEventListener('click', function () {
             var target  = document.getElementById(btn.getAttribute('data-toggle-comments'));
             if (!target) return;
             var isHidden = target.style.display === 'none' || target.style.display === '';
             target.style.display = isHidden ? 'block' : 'none';
-            if (iconEl) iconEl.className = isHidden ? 'fas fa-comments-slash' : 'fas fa-comments';
-            btn.title = isHidden ? 'Скрыть' : 'Комментарии';
+            if (iconEl) {
+                iconEl.className = isHidden ? 'fas fa-chevron-up' : origClass;
+            }
+            btn.title = isHidden ? 'Скрыть' : btn.getAttribute('title') || '';
         });
     });
 
@@ -87,7 +89,6 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
         area.addEventListener('click', function (e) {
-            // Не затрагивать клик по кнопке submit внутри zone
             if (e.target.tagName === 'BUTTON' || e.target.type === 'submit') return;
             var input = area.querySelector('input[type=file]');
             if (input) input.click();
@@ -127,7 +128,6 @@ function showToast(type, message) {
     var toast = document.createElement('div');
     toast.className = 'toast toast-' + type;
     toast.setAttribute('role', 'alert');
-    // Безопасное ОТОБРАЖЕНИЕ: message не вставляем через innerHTML
     var icon = document.createElement('i');
     icon.className = 'fas ' + (icons[type] || 'fa-circle-info');
     var text = document.createElement('span');

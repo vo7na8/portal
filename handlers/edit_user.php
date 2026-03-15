@@ -10,12 +10,13 @@ $fullName  = trim($_POST['full_name']   ?? '');
 $username  = trim($_POST['username']    ?? '');
 $roleId    = (int)($_POST['role_id']    ?? 0);
 $newPass   = trim($_POST['new_password'] ?? '');
+// FIX #3.1: обновляем person_id
+$personId  = (int)($_POST['person_id'] ?? 0) ?: null;
 
 if ($fullName === '' || $username === '' || $roleId <= 0) {
     flash('error', 'Заполните все обязательные поля.');
     redirect('../main.php?page=users');
 }
-// Проверка уникальности username
 $exists = $db->selectValue('SELECT COUNT(*) FROM users WHERE username = ? AND id != ?', [$username, $id]);
 if ($exists) { flash('error', 'Пользователь с таким логином уже существует.'); redirect('../main.php?page=users'); }
 
@@ -23,6 +24,7 @@ $data = [
     'full_name' => $fullName,
     'username'  => $username,
     'role_id'   => $roleId,
+    'person_id' => $personId,
 ];
 if ($newPass !== '') {
     if (strlen($newPass) < 6) { flash('error', 'Пароль должен быть не менее 6 символов.'); redirect('../main.php?page=users'); }

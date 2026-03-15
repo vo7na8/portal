@@ -61,7 +61,7 @@ $persons = $db->select(
 <?php endif; ?>
 
 <?php if (empty($persons)): ?>
-<div class="empty-state"><i class="fas fa-id-card"></i><p>?php echo $search ? 'Никто не найден' : 'Людей пока нет'; ?></p></div>
+<div class="empty-state"><i class="fas fa-id-card"></i><p><?php echo $search ? 'Никто не найден' : 'Людей пока нет'; ?></p></div>
 <?php else: ?>
 <div class="item-list">
 <?php foreach ($persons as $p):
@@ -74,6 +74,10 @@ $persons = $db->select(
          LEFT JOIN divisions dv ON dv.id = d.division_id
          WHERE e.person_id = ? ORDER BY e.is_active DESC, e.hire_date DESC',
         [$pid]
+    );
+    $allDepts = $db->select(
+        'SELECT d.id, d.name, d.short_name, dv.name AS div_name
+         FROM departments d LEFT JOIN divisions dv ON dv.id=d.division_id ORDER BY dv.name, d.name'
     );
 ?>
 <div class="card mb-1">
@@ -97,11 +101,11 @@ $persons = $db->select(
             <?php endif; ?>
         </div>
         <div class="item-actions">
-            <button class="btn btn-secondary btn-sm" data-toggle-comments="pemp-<?= $pid ?>">
+            <button class="btn btn-secondary btn-sm" data-toggle-comments="pemp-<?= $pid ?>" title="Должности">
                 <i class="fas fa-briefcase"></i> <span><?= count($deps) ?></span>
             </button>
             <?php if ($canEdit): ?>
-            <button class="btn btn-secondary btn-sm" data-toggle-comments="pedit-<?= $pid ?>">
+            <button class="btn btn-secondary btn-sm" data-toggle-comments="pedit-<?= $pid ?>" title="Редактировать">
                 <i class="fas fa-pen"></i>
             </button>
             <?php endif; ?>
@@ -118,12 +122,6 @@ $persons = $db->select(
     </div>
 
     <!-- Должности -->
-    <?php
-    $allDepts = $db->select(
-        'SELECT d.id, d.name, d.short_name, dv.name AS div_name
-         FROM departments d LEFT JOIN divisions dv ON dv.id=d.division_id ORDER BY dv.name, d.name'
-    );
-    ?>
     <div id="pemp-<?= $pid ?>" style="display:none;padding:.8rem 1.2rem;border-top:1px solid var(--border);background:var(--bg-content)">
         <div class="card-title mb-1" style="font-size:.9rem">Должности</div>
         <?php if (hasPermission($pdo, 'add_employee')): ?>
@@ -154,34 +152,71 @@ $persons = $db->select(
         <p class="text-muted" style="font-size:.85rem">Должностей нет</p>
         <?php else: ?>
         <?php foreach ($deps as $emp): ?>
-        <div class="item-row" style="padding:.4rem 0;border-bottom:1px solid var(--border)">
-            <div style="flex:1;font-size:.88rem">
-                <span style="font-weight:500"><?= e($emp['position']) ?></span>
-                <?php if (!$emp['is_active']): ?><span class="badge badge-closed" style="font-size:.7rem">Уволен</span><?php endif; ?>
-                <div class="text-muted" style="font-size:.8rem">
-                    <?= e($emp['div_name'] ?? '') ?><?= !empty($emp['div_name']) ? ' / ' : '' ?><?= e($emp['dept_name'] ?? 'Без отделения') ?>
-                    <?php if ($emp['contract_number']): ?> &bull; Дог.: <?= e($emp['contract_number']) ?><?php endif; ?>
-                    <?php if ($emp['hire_date']): ?> &bull; С: <?= format_date($emp['hire_date']) ?><?php endif; ?>
-                    <?php if ($emp['fire_date']): ?> по <?= format_date($emp['fire_date']) ?><?php endif; ?>
+        <div style="border:1px solid var(--border);border-radius:var(--radius);padding:.5rem .8rem;margin-top:.5rem;background:var(--card-bg)">
+            <div class="item-row" style="padding:0">
+                <div style="flex:1;font-size:.88rem">
+                    <span style="font-weight:500"><?= e($emp['position']) ?></span>
+                    <?php if (!$emp['is_active']): ?><span class="badge badge-closed" style="font-size:.7rem">Уволен</span><?php endif; ?>
+                    <div class="text-muted" style="font-size:.8rem">
+                        <?= e($emp['div_name'] ?? '') ?><?= !empty($emp['div_name']) ? ' / ' : '' ?><?= e($emp['dept_name'] ?? 'Без отделения') ?>
+                        <?php if ($emp['contract_number']): ?> &bull; Дог.: <?= e($emp['contract_number']) ?><?php endif; ?>
+                        <?php if ($emp['hire_date']): ?> &bull; С: <?= format_date($emp['hire_date']) ?><?php endif; ?>
+                        <?php if ($emp['fire_date']): ?> по <?= format_date($emp['fire_date']) ?><?php endif; ?>
+                    </div>
+                </div>
+                <div class="flex" style="gap:.3rem">
+                    <!-- FIX #3: кнопка редактирования должности -->
+                    <?php if (hasPermission($pdo, 'edit_employee')): ?>
+                    <button class="btn btn-secondary btn-sm" data-toggle-comments="empedit-<?= (int)$emp['emp_id'] ?>" title="Редактировать должность">
+                        <i class="fas fa-pen"></i>
+                    </button>
+                    <form method="post" action="handlers/toggle_employee.php" style="display:inline">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="id" value="<?= (int)$emp['emp_id'] ?>">
+                        <button class="btn btn-secondary btn-sm" title="<?= $emp['is_active'] ? 'Отметить уволенным' : 'Восстановить' ?>">
+                            <i class="fas <?= $emp['is_active'] ? 'fa-user-xmark' : 'fa-user-check' ?>"></i>
+                        </button>
+                    </form>
+                    <?php endif; ?>
+                    <?php if (hasPermission($pdo, 'delete_employee')): ?>
+                    <form method="post" action="handlers/delete_employee.php" style="display:inline">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="id" value="<?= (int)$emp['emp_id'] ?>">
+                        <button class="btn btn-danger btn-sm" data-confirm="Удалить должность?">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </form>
+                    <?php endif; ?>
                 </div>
             </div>
+            <!-- FIX #3: форма редактирования должности -->
             <?php if (hasPermission($pdo, 'edit_employee')): ?>
-            <form method="post" action="handlers/toggle_employee.php" style="display:inline">
-                <?= csrf_field() ?>
-                <input type="hidden" name="id" value="<?= (int)$emp['emp_id'] ?>">
-                <button class="btn btn-secondary btn-sm" title="<?= $emp['is_active'] ? 'Отметить уволенным' : 'Восстановить' ?>">
-                    <i class="fas <?= $emp['is_active'] ? 'fa-user-xmark' : 'fa-user-check' ?>"></i>
-                </button>
-            </form>
-            <?php endif; ?>
-            <?php if (hasPermission($pdo, 'delete_employee')): ?>
-            <form method="post" action="handlers/delete_employee.php" style="display:inline">
-                <?= csrf_field() ?>
-                <input type="hidden" name="id" value="<?= (int)$emp['emp_id'] ?>">
-                <button class="btn btn-danger btn-sm" data-confirm="Удалить должность?">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </form>
+            <div id="empedit-<?= (int)$emp['emp_id'] ?>" style="display:none;margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--border)">
+                <form method="post" action="handlers/edit_employee.php">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="id" value="<?= (int)$emp['emp_id'] ?>">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Отделение</label>
+                            <select name="department_id">
+                                <option value="">— не указано —</option>
+                                <?php foreach ($allDepts as $d): ?>
+                                <option value="<?= (int)$d['id'] ?>" <?= (int)$emp['department_id'] === (int)$d['id'] ? 'selected' : '' ?>>
+                                    <?= e($d['div_name'] ?? '') ?> / <?= e($d['name']) ?>
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="form-group"><label>Должность *</label><input type="text" name="position" value="<?= e($emp['position']) ?>" required maxlength="255"></div>
+                        <div class="form-group"><label>Номер договора</label><input type="text" name="contract_number" value="<?= e($emp['contract_number'] ?? '') ?>" maxlength="100"></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group"><label>Принят на работу</label><input type="date" name="hire_date" value="<?= e($emp['hire_date'] ?? '') ?>"></div>
+                        <div class="form-group"><label>Уволен</label><input type="date" name="fire_date" value="<?= e($emp['fire_date'] ?? '') ?>"></div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-floppy-disk"></i> Сохранить</button>
+                </form>
+            </div>
             <?php endif; ?>
         </div>
         <?php endforeach; ?>

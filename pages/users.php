@@ -3,6 +3,8 @@ if (!hasPermission($pdo, 'view_users')) { echo '<div class="empty-state"><i clas
 $db       = Database::getInstance();
 $users    = $db->select('SELECT u.*, r.name AS role_name FROM users u LEFT JOIN roles r ON u.role_id=r.id ORDER BY u.full_name');
 $roles    = $db->select('SELECT * FROM roles ORDER BY name');
+// FIX #3.1: список физлиц для привязки
+$persons  = $db->select('SELECT id, last_name, first_name, middle_name FROM persons ORDER BY last_name, first_name');
 $canAdd    = hasPermission($pdo, 'add_user');
 $canEdit   = hasPermission($pdo, 'edit_user');
 $canDelete = hasPermission($pdo, 'delete_user');
@@ -30,6 +32,20 @@ $myId      = (int)($_SESSION['user_id'] ?? 0);
                 </select>
             </div>
         </div>
+        <!-- FIX #3.1: привязка к физлицу -->
+        <div class="form-row">
+            <div class="form-group">
+                <label>Физическое лицо <span class="text-muted" style="font-weight:400;font-size:.8rem">(необязательно)</span></label>
+                <select name="person_id">
+                    <option value="">— не привязан —</option>
+                    <?php foreach ($persons as $per): ?>
+                    <option value="<?= (int)$per['id'] ?>">
+                        <?= e($per['last_name']) ?> <?= e($per['first_name']) ?><?= $per['middle_name'] ? ' ' . e($per['middle_name']) : '' ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+        </div>
         <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Создать</button>
     </form>
 </div>
@@ -40,6 +56,11 @@ $myId      = (int)($_SESSION['user_id'] ?? 0);
     <div class="empty-state"><i class="fas fa-users"></i><p>Пользователей нет</p></div>
 <?php else: foreach ($users as $u):
     $uid = (int)$u['id'];
+    // Получаем имя привязанного физлица
+    $linkedPerson = null;
+    if (!empty($u['person_id'])) {
+        $linkedPerson = $db->selectRow('SELECT last_name, first_name, middle_name FROM persons WHERE id = ?', [(int)$u['person_id']]);
+    }
 ?>
 <div class="card mb-1">
     <div class="item-row">
@@ -50,12 +71,18 @@ $myId      = (int)($_SESSION['user_id'] ?? 0);
             <div>
                 <div style="font-weight:500"><?= e($u['full_name']) ?></div>
                 <div class="text-muted" style="font-size:.82rem">@<?= e($u['username']) ?></div>
+                <?php if ($linkedPerson): ?>
+                <div class="text-muted" style="font-size:.78rem">
+                    <i class="fas fa-id-card"></i>
+                    <?= e($linkedPerson['last_name']) ?> <?= e($linkedPerson['first_name']) ?><?= $linkedPerson['middle_name'] ? ' ' . e($linkedPerson['middle_name']) : '' ?>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
         <div class="item-actions">
             <span class="user-role-badge"><?= e($u['role_name'] ?? 'Без роли') ?></span>
             <?php if ($canEdit): ?>
-            <button class="btn btn-secondary btn-sm" data-toggle-comments="uedit-<?= $uid ?>">
+            <button class="btn btn-secondary btn-sm" data-toggle-comments="uedit-<?= $uid ?>" title="Редактировать">
                 <i class="fas fa-pen"></i>
             </button>
             <?php endif; ?>
@@ -95,6 +122,20 @@ $myId      = (int)($_SESSION['user_id'] ?? 0);
                 <div class="form-group">
                     <label>Новый пароль <span class="text-muted" style="font-weight:400;font-size:.8rem">(оставьте пустым, чтобы не менять)</span></label>
                     <input type="password" name="new_password" minlength="6" placeholder="Не изменять">
+                </div>
+            </div>
+            <!-- FIX #3.1: привязка к физлицу в редактировании -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Физическое лицо</label>
+                    <select name="person_id">
+                        <option value="">— не привязан —</option>
+                        <?php foreach ($persons as $per): ?>
+                        <option value="<?= (int)$per['id'] ?>" <?= (int)($u['person_id'] ?? 0) === (int)$per['id'] ? 'selected' : '' ?>>
+                            <?= e($per['last_name']) ?> <?= e($per['first_name']) ?><?= $per['middle_name'] ? ' ' . e($per['middle_name']) : '' ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
             </div>
             <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-floppy-disk"></i> Сохранить</button>

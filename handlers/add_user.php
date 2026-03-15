@@ -18,11 +18,14 @@ if ($exists) {
     flash('error', 'Пользователь с таким логином уже существует.');
     redirect('../main.php?page=users');
 }
+// FIX #3.1: сохраняем person_id
+$personId = (int)($_POST['person_id'] ?? 0) ?: null;
 Database::getInstance()->insert('users', [
     'username'      => $d['username'],
     'full_name'     => $d['full_name'],
     'password_hash' => $security->hashPassword($_POST['password']),
     'role_id'       => (int)$d['role_id'],
+    'person_id'     => $personId,
 ]);
 flash('success', 'Пользователь ' . $d['full_name'] . ' создан.');
 redirect('../main.php?page=users');
