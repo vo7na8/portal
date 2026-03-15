@@ -3,12 +3,17 @@ if (!hasPermission($pdo, 'view_users')) { echo '<div class="empty-state"><i clas
 $db       = Database::getInstance();
 $users    = $db->select('SELECT u.*, r.name AS role_name FROM users u LEFT JOIN roles r ON u.role_id=r.id ORDER BY u.full_name');
 $roles    = $db->select('SELECT * FROM roles ORDER BY name');
-// FIX #3.1: список физлиц для привязки
 $persons  = $db->select('SELECT id, last_name, first_name, middle_name FROM persons ORDER BY last_name, first_name');
 $canAdd    = hasPermission($pdo, 'add_user');
 $canEdit   = hasPermission($pdo, 'edit_user');
 $canDelete = hasPermission($pdo, 'delete_user');
 $myId      = (int)($_SESSION['user_id'] ?? 0);
+
+// Предзагружаем всех физлиц в массив по id — избегаем N+1 в цикле
+$personsById = [];
+foreach ($persons as $per) {
+    $personsById[(int)$per['id']] = $per;
+}
 ?>
 <h2 class="section-title">Пользователи</h2>
 
@@ -32,7 +37,6 @@ $myId      = (int)($_SESSION['user_id'] ?? 0);
                 </select>
             </div>
         </div>
-        <!-- FIX #3.1: привязка к физлицу -->
         <div class="form-row">
             <div class="form-group">
                 <label>Физическое лицо <span class="text-muted" style="font-weight:400;font-size:.8rem">(необязательно)</span></label>
@@ -56,11 +60,8 @@ $myId      = (int)($_SESSION['user_id'] ?? 0);
     <div class="empty-state"><i class="fas fa-users"></i><p>Пользователей нет</p></div>
 <?php else: foreach ($users as $u):
     $uid = (int)$u['id'];
-    // Получаем имя привязанного физлица
-    $linkedPerson = null;
-    if (!empty($u['person_id'])) {
-        $linkedPerson = $db->selectRow('SELECT last_name, first_name, middle_name FROM persons WHERE id = ?', [(int)$u['person_id']]);
-    }
+    // Берём физлицо из предзагруженного массива (без доп. запроса)
+    $linkedPerson = !empty($u['person_id']) ? ($personsById[(int)$u['person_id']] ?? null) : null;
 ?>
 <div class="card mb-1">
     <div class="item-row">
@@ -124,7 +125,6 @@ $myId      = (int)($_SESSION['user_id'] ?? 0);
                     <input type="password" name="new_password" minlength="6" placeholder="Не изменять">
                 </div>
             </div>
-            <!-- FIX #3.1: привязка к физлицу в редактировании -->
             <div class="form-row">
                 <div class="form-group">
                     <label>Физическое лицо</label>
