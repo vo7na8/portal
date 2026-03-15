@@ -9,22 +9,33 @@ $canEdit   = hasPermission($pdo, 'edit_user');
 $canDelete = hasPermission($pdo, 'delete_user');
 $myId      = (int)($_SESSION['user_id'] ?? 0);
 
-// Предзагружаем всех физлиц в массив по id — избегаем N+1 в цикле
 $personsById = [];
 foreach ($persons as $per) {
     $personsById[(int)$per['id']] = $per;
 }
+
+// Данные для JS-автозаполнения: id => ФИО
+$personsJson = json_encode(
+    array_map(fn($p) => [
+        'id'  => (int)$p['id'],
+        'fio' => trim($p['last_name'] . ' ' . $p['first_name'] . ' ' . ($p['middle_name'] ?? '')),
+    ], $persons),
+    JSON_UNESCAPED_UNICODE
+);
 ?>
 <h2 class="section-title">Пользователи</h2>
 
 <?php if ($canAdd): ?>
 <div class="form-container">
     <div class="card-title mb-2">Новый пользователь</div>
-    <form method="post" action="handlers/add_user.php">
+    <form method="post" action="handlers/add_user.php" id="form-add-user">
         <?= csrf_field() ?>
         <div class="form-row">
             <div class="form-group"><label>Логин</label><input type="text" name="username" required maxlength="50"></div>
-            <div class="form-group"><label>Полное имя</label><input type="text" name="full_name" required maxlength="255"></div>
+            <div class="form-group">
+                <label>Полное имя</label>
+                <input type="text" name="full_name" id="add-user-fullname" required maxlength="255">
+            </div>
         </div>
         <div class="form-row">
             <div class="form-group"><label>Пароль (мин. 6 симв.)</label><input type="password" name="password" required minlength="6"></div>
@@ -40,7 +51,7 @@ foreach ($persons as $per) {
         <div class="form-row">
             <div class="form-group">
                 <label>Физическое лицо <span class="text-muted" style="font-weight:400;font-size:.8rem">(необязательно)</span></label>
-                <select name="person_id">
+                <select name="person_id" id="add-user-person">
                     <option value="">— не привязан —</option>
                     <?php foreach ($persons as $per): ?>
                     <option value="<?= (int)$per['id'] ?>">
@@ -53,6 +64,36 @@ foreach ($persons as $per) {
         <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Создать</button>
     </form>
 </div>
+
+<script>
+(function () {
+    const persons = <?= $personsJson ?>;
+    const map = {};
+    persons.forEach(p => map[p.id] = p.fio);
+
+    const sel      = document.getElementById('add-user-person');
+    const fullName = document.getElementById('add-user-fullname');
+
+    sel.addEventListener('change', function () {
+        const fio = map[this.value] || '';
+        // Заполняем только если поле пустое или уже было заполнено автоматически
+        if (fio && (fullName.value === '' || fullName.dataset.autoFilled === '1')) {
+            fullName.value = fio;
+            fullName.dataset.autoFilled = '1';
+        }
+        if (!fio) {
+            // Сброс если выбрано «не привязан»
+            if (fullName.dataset.autoFilled === '1') fullName.value = '';
+            fullName.dataset.autoFilled = '0';
+        }
+    });
+
+    // Если пользователь сам редактирует поле — снимаем флаг автозаполнения
+    fullName.addEventListener('input', function () {
+        this.dataset.autoFilled = '0';
+    });
+}());
+</script>
 <?php endif; ?>
 
 <div class="item-list">
@@ -60,7 +101,6 @@ foreach ($persons as $per) {
     <div class="empty-state"><i class="fas fa-users"></i><p>Пользователей нет</p></div>
 <?php else: foreach ($users as $u):
     $uid = (int)$u['id'];
-    // Берём физлицо из предзагруженного массива (без доп. запроса)
     $linkedPerson = !empty($u['person_id']) ? ($personsById[(int)$u['person_id']] ?? null) : null;
 ?>
 <div class="card mb-1">
