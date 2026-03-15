@@ -37,7 +37,6 @@ $db->transaction(function($db) use ($d, $responsibleId, $departmentId, $userId) 
         'department_id'    => $departmentId,
     ]);
 
-    // Событие в ленте активности (equipment_comments)
     $db->insert('equipment_comments', [
         'equipment_id' => $eqId,
         'user_id'      => $userId,
@@ -45,9 +44,8 @@ $db->transaction(function($db) use ($d, $responsibleId, $departmentId, $userId) 
         'is_log'       => 1,
     ]);
 
-    // Запись в новостях (аналогично созданию заявки)
     $parts = [];
-    if (!empty($d['type']))             $parts[] = тип: ' . $d['type'];
+    if (!empty($d['type']))             $parts[] = 'тип: '          . $d['type'];
     if (!empty($d['location']))         $parts[] = 'расположение: ' . $d['location'];
     if (!empty($d['inventory_number'])) $parts[] = 'инв. номер: ' . $d['inventory_number'];
     $body = 'Статус: ' . $d['status'];
