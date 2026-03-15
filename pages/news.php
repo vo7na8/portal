@@ -3,7 +3,6 @@ if (!hasPermission($pdo, 'view_news')) { echo '<div class="empty-state"><i class
 $db   = Database::getInstance();
 $news = $db->select('SELECT n.*, u.full_name FROM news n LEFT JOIN users u ON n.author_id=u.id ORDER BY n.created_at DESC');
 $canAdd    = hasPermission($pdo, 'add_news');
-$canEdit   = hasPermission($pdo, 'edit_news');
 $canDelete = hasPermission($pdo, 'delete_news');
 ?>
 <h2 class="section-title">Новости</h2>
@@ -16,12 +15,12 @@ $canDelete = hasPermission($pdo, 'delete_news');
     <form method="post" action="handlers/add_news.php">
         <?= csrf_field() ?>
         <div class="form-group">
-            <label>Заголовок</label>
+            <label>Заголовок *</label>
             <input type="text" name="title" required maxlength="255">
         </div>
         <div class="form-group">
-            <label>Текст</label>
-            <textarea name="content" required rows="3"></textarea>
+            <label>Текст *</label>
+            <textarea name="body" required rows="3"></textarea>
         </div>
         <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Добавить</button>
     </form>
@@ -35,7 +34,7 @@ $canDelete = hasPermission($pdo, 'delete_news');
     <div class="item-row">
         <div style="flex:1;min-width:0">
             <div style="font-weight:500"><?= e($item['title']) ?></div>
-            <div class="text-muted mt-1" style="font-size:.85rem"><?= e($item['content']) ?></div>
+            <div class="text-muted mt-1" style="font-size:.85rem;white-space:pre-wrap"><?= e($item['body']) ?></div>
             <div class="text-muted mt-1" style="font-size:.78rem">
                 <i class="fas fa-user"></i> <?= e($item['full_name'] ?? 'Автор неизвестен') ?>
                 &nbsp;<i class="fas fa-clock"></i> <?= format_datetime($item['created_at']) ?>
