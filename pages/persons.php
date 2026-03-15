@@ -5,7 +5,7 @@ $canAdd    = hasPermission($pdo, 'add_person');
 $canEdit   = hasPermission($pdo, 'edit_person');
 $canDelete = hasPermission($pdo, 'delete_person');
 
-$search  = trim($_GET['q'] ?? '');
+$search   = trim($_GET['q'] ?? '');
 $sqlWhere = $search
     ? "WHERE (p.last_name LIKE ? OR p.first_name LIKE ? OR p.middle_name LIKE ?)"
     : '';
@@ -23,6 +23,25 @@ $persons = $db->select(
      ORDER BY p.last_name, p.first_name",
     $sqlParams
 );
+
+// --- ОПТИМИЗАЦИЯ: загружаем [ДО цикла] все должности и отделения одним запросом ---
+$allDepts = $db->select(
+    'SELECT d.id, d.name, d.short_name, dv.name AS div_name
+     FROM departments d LEFT JOIN divisions dv ON dv.id=d.division_id ORDER BY dv.name, d.name'
+);
+
+$rawEmployees = $db->select(
+    'SELECT e.*, e.id AS emp_id, d.name AS dept_name, dv.name AS div_name
+     FROM employees e
+     LEFT JOIN departments d ON d.id = e.department_id
+     LEFT JOIN divisions dv ON dv.id = d.division_id
+     ORDER BY e.is_active DESC, e.hire_date DESC'
+);
+// Группируем по person_id
+$employeesByPerson = [];
+foreach ($rawEmployees as $emp) {
+    $employeesByPerson[(int)$emp['person_id']][] = $emp;
+}
 ?>
 <h2 class="section-title">Люди</h2>
 
@@ -67,18 +86,8 @@ $persons = $db->select(
 <?php foreach ($persons as $p):
     $pid  = (int)$p['id'];
     $fio  = e($p['last_name']) . ' ' . e($p['first_name']) . (trim($p['middle_name'] ?? '') ? ' ' . e($p['middle_name']) : '');
-    $deps = $db->select(
-        'SELECT e.*, e.id AS emp_id, d.name AS dept_name, dv.name AS div_name
-         FROM employees e
-         LEFT JOIN departments d ON d.id = e.department_id
-         LEFT JOIN divisions dv ON dv.id = d.division_id
-         WHERE e.person_id = ? ORDER BY e.is_active DESC, e.hire_date DESC',
-        [$pid]
-    );
-    $allDepts = $db->select(
-        'SELECT d.id, d.name, d.short_name, dv.name AS div_name
-         FROM departments d LEFT JOIN divisions dv ON dv.id=d.division_id ORDER BY dv.name, d.name'
-    );
+    // ОПТИМИЗАЦИЯ: берём из предзагруженного массива
+    $deps = $employeesByPerson[$pid] ?? [];
 ?>
 <div class="card mb-1">
     <div class="item-row">
@@ -165,7 +174,6 @@ $persons = $db->select(
                     </div>
                 </div>
                 <div class="flex" style="gap:.3rem">
-                    <!-- FIX #3: кнопка редактирования должности -->
                     <?php if (hasPermission($pdo, 'edit_employee')): ?>
                     <button class="btn btn-secondary btn-sm" data-toggle-comments="empedit-<?= (int)$emp['emp_id'] ?>" title="Редактировать должность">
                         <i class="fas fa-pen"></i>
@@ -189,7 +197,6 @@ $persons = $db->select(
                     <?php endif; ?>
                 </div>
             </div>
-            <!-- FIX #3: форма редактирования должности -->
             <?php if (hasPermission($pdo, 'edit_employee')): ?>
             <div id="empedit-<?= (int)$emp['emp_id'] ?>" style="display:none;margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--border)">
                 <form method="post" action="handlers/edit_employee.php">
@@ -224,7 +231,6 @@ $persons = $db->select(
     </div>
 
     <?php if ($canEdit): ?>
-    <!-- Редактирование персоны -->
     <div id="pedit-<?= $pid ?>" style="display:none;padding:.8rem 1.2rem;border-top:1px solid var(--border);background:var(--bg-content)">
         <div class="card-title mb-1" style="font-size:.9rem">Редактировать</div>
         <form method="post" action="handlers/edit_person.php">
@@ -250,5 +256,6 @@ $persons = $db->select(
     </div>
     <?php endif; ?>
 </div>
-<?php endforeach; endif; ?>
+<?php endforeach; ?>
 </div>
+<?php endif; ?>
