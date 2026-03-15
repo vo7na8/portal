@@ -4,24 +4,23 @@ if (!hasPermission($pdo, 'add_equipment')) { flash('error', 'Недостато�
 $security->requireCsrf();
 $v = Validator::make($_POST);
 if (!$v->validate([
-    'name'         => 'required|max:255',
-    'type'         => 'required|max:100',
-    'location'     => 'required|max:255',
-    'inventory_no' => 'nullable|max:100',
-    'status'       => 'required',
-    'responsible'  => 'nullable|max:255',
+    'name'             => 'required|max:255',
+    'type'             => 'nullable|max:100',
+    'location'         => 'nullable|max:255',
+    'inventory_number' => 'nullable|max:100',
+    'status'           => 'required',
+    'responsible_id'   => 'nullable',
 ])) {
     flash('error', $v->firstErrorMessage());
 } else {
     $d = $v->validated();
     Database::getInstance()->insert('equipment', [
-        'name'         => $d['name'],
-        'type'         => $d['type'],
-        'location'     => $d['location'],
-        'inventory_no' => $d['inventory_no'] ?? '',
-        'status'       => $d['status'],
-        'responsible'  => $d['responsible'] ?? '',
-        'created_at'   => date('Y-m-d H:i:s'),
+        'name'             => $d['name'],
+        'type'             => $d['type']             ?? '',
+        'location'         => $d['location']         ?? '',
+        'inventory_number' => $d['inventory_number'] ?? '',
+        'status'           => $d['status'],
+        'responsible_id'   => ($d['responsible_id'] && $d['responsible_id'] > 0) ? (int)$d['responsible_id'] : null,
     ]);
     cacheDelete('equipment_list');
     flash('success', 'Техника добавлена.');

@@ -1,12 +1,13 @@
 <?php
 /**
  * Боковая панель навигации
- * Ожидает переменные: $menu_items, $current_page
+ * Ожидает $menu_items [ключ => ['label'=>..., 'icon'=>..., 'perm'=>...]], $current_page
  */
 $_sidebar_user_name = e($_SESSION['user_name'] ?? '');
 $_sidebar_user_role = e($_SESSION['role_name'] ?? '');
 
-$_sidebar_icons = [
+// Запасные иконки если в массиве иконя нет
+$_fallback_icons = [
     'dashboard' => 'fa-gauge-high',
     'news'      => 'fa-newspaper',
     'requests'  => 'fa-clipboard-list',
@@ -17,6 +18,7 @@ $_sidebar_icons = [
     'security'  => 'fa-shield-halved',
     'birthdays' => 'fa-cake-candles',
     'roles'     => 'fa-user-tag',
+    'profile'   => 'fa-circle-user',
 ];
 ?>
 <aside class="sidebar" id="sidebar">
@@ -38,19 +40,31 @@ $_sidebar_icons = [
     </div>
 
     <nav class="nav-menu">
-        <?php foreach ($menu_items as $page => $name): ?>
+        <?php foreach ($menu_items as $page => $item):
+            // Поддерживаем оба формата: массив ['label','icon'] и простая строка
+            if (is_array($item)) {
+                $label = $item['label'] ?? $page;
+                $icon  = $item['icon']  ?? ($_fallback_icons[$page] ?? 'fa-circle');
+            } else {
+                $label = $item;
+                $icon  = $_fallback_icons[$page] ?? 'fa-circle';
+            }
+        ?>
         <a href="main.php?page=<?= $page ?>"
            class="nav-item <?= $current_page === $page ? 'active' : '' ?>">
-            <i class="fas <?= $_sidebar_icons[$page] ?? 'fa-circle' ?>"></i>
-            <span><?= e($name) ?></span>
+            <i class="fas <?= $icon ?>"></i>
+            <span><?= e($label) ?></span>
         </a>
         <?php endforeach; ?>
     </nav>
 
     <div class="sidebar-footer">
-        <a href="logout.php" class="logout-btn">
-            <i class="fas fa-right-from-bracket"></i>
-            <span>Выйти</span>
-        </a>
+        <form method="post" action="logout.php" style="margin:0">
+            <?= csrf_field() ?>
+            <button type="submit" class="logout-btn">
+                <i class="fas fa-right-from-bracket"></i>
+                <span>Выйти</span>
+            </button>
+        </form>
     </div>
 </aside>
