@@ -18,12 +18,16 @@ if (!$equipments) {
     );
     if ($equipments) cacheSet('equipment_list', $equipments);
 }
+$statuses  = ['рабочее', 'неисправное', 'на ремонте', 'списано'];
 $statusMap = [
     'рабочее'     => 'badge-done',
     'неисправное' => 'badge-new',
     'на ремонте'  => 'badge-progress',
     'списано'     => 'badge-closed',
 ];
+// Хелпер: первая буква заглавная
+$ucfirst = fn(string $s): string =>
+    mb_strtoupper(mb_substr($s, 0, 1, 'UTF-8'), 'UTF-8') . mb_substr($s, 1, null, 'UTF-8');
 ?>
 <h2 class="section-title">Техника</h2>
 
@@ -44,10 +48,9 @@ $statusMap = [
             <div class="form-group">
                 <label>Статус</label>
                 <select name="status" required>
-                    <option value="рабочее">Рабочее</option>
-                    <option value="неисправное">Неисправное</option>
-                    <option value="на ремонте">На ремонте</option>
-                    <option value="списано">Списано</option>
+                    <?php foreach ($statuses as $s): ?>
+                    <option value="<?= $s ?>"><?= $ucfirst($s) ?></option>
+                    <?php endforeach; ?>
                 </select>
             </div>
             <div class="form-group">
@@ -133,8 +136,10 @@ $statusMap = [
                 <div class="form-group">
                     <label>Статус</label>
                     <select name="status" required>
-                        <?php foreach (['рабочее','неисправное','на ремонте','списано'] as $s): ?>
-                        <option value="<?= $s ?>" <?= ($eq['status'] ?? '') === $s ? 'selected' : '' ?>><?= mb_ucfirst($s) ?></option>
+                        <?php foreach ($statuses as $s): ?>
+                        <option value="<?= $s ?>" <?= ($eq['status'] ?? '') === $s ? 'selected' : '' ?>>
+                            <?= $ucfirst($s) ?>
+                        </option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -143,7 +148,9 @@ $statusMap = [
                     <select name="responsible_id">
                         <option value="">— не выбран —</option>
                         <?php foreach ($allUsers as $u): ?>
-                        <option value="<?= (int)$u['id'] ?>" <?= (int)($eq['responsible_id'] ?? 0) === (int)$u['id'] ? 'selected' : '' ?>><?= e($u['full_name']) ?></option>
+                        <option value="<?= (int)$u['id'] ?>" <?= (int)($eq['responsible_id'] ?? 0) === (int)$u['id'] ? 'selected' : '' ?>>
+                            <?= e($u['full_name']) ?>
+                        </option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -153,7 +160,7 @@ $statusMap = [
     </div>
     <?php endif; ?>
 
-    <!-- Лог изменений + комментарии -->
+    <!-- Лог + комментарии -->
     <div id="log-<?= $eqId ?>" style="display:none;padding:.8rem 1.2rem;border-top:1px solid var(--border);background:var(--bg-content)">
         <form method="post" action="handlers/add_comment.php" class="flex" style="gap:.6rem;margin-bottom:.8rem">
             <?= csrf_field() ?>
@@ -169,7 +176,9 @@ $statusMap = [
             <?php foreach ($comments as $c): ?>
             <div class="comment-item" style="<?= $c['is_log'] ? 'opacity:.75;font-style:italic' : '' ?>">
                 <strong><?= e($c['full_name'] ?? 'Система') ?></strong>
-                <?php if ($c['is_log']): ?><span class="badge badge-progress" style="font-size:.7rem;margin-left:.3rem">изменение</span><?php endif; ?>
+                <?php if ($c['is_log']): ?>
+                <span class="badge badge-progress" style="font-size:.7rem;margin-left:.3rem">изменение</span>
+                <?php endif; ?>
                 <span class="comment-date"><?= format_datetime($c['created_at']) ?></span><br>
                 <span style="font-size:.88rem;white-space:pre-wrap"><?= e($c['body']) ?></span>
             </div>
