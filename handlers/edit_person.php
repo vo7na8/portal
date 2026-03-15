@@ -15,8 +15,9 @@ if ($lastName === '' || $firstName === '') {
     redirect('../main.php?page=persons');
 }
 
-// Проверка: дубликат ФИО среди других записей
 $db = Database::getInstance();
+
+// Проверка дубликата ФИО среди других записей
 $exists = $db->selectValue(
     'SELECT COUNT(*) FROM persons WHERE last_name=? AND first_name=? AND COALESCE(middle_name,"")=? AND id!=?',
     [$lastName, $firstName, $middleName, $id]
@@ -34,16 +35,19 @@ if ($birthDate && strtotime($birthDate) > time()) {
     redirect('../main.php?page=persons');
 }
 
-$db->update('persons', [
-    'last_name'       => $lastName,
-    'first_name'      => $firstName,
-    'middle_name'     => $middleName ?: null,
-    'birth_date'      => $birthDate,
-    'has_eds'         => isset($_POST['has_eds']) ? 1 : 0,
-    'eds_cert_number' => trim($_POST['eds_cert_number'] ?? '') ?: null,
-    'eds_valid_until' => $edsValidUntil,
-    'note'            => trim($_POST['note'] ?? '') ?: null,
-    'updated_at'      => date('Y-m-d H:i:s'),
-], 'id = ?', [$id]);
+$db->transaction(function($db) use ($id, $lastName, $firstName, $middleName, $birthDate, $edsValidUntil) {
+    $db->update('persons', [
+        'last_name'       => $lastName,
+        'first_name'      => $firstName,
+        'middle_name'     => $middleName ?: null,
+        'birth_date'      => $birthDate,
+        'has_eds'         => isset($_POST['has_eds']) ? 1 : 0,
+        'eds_cert_number' => trim($_POST['eds_cert_number'] ?? '') ?: null,
+        'eds_valid_until' => $edsValidUntil,
+        'note'            => trim($_POST['note'] ?? '') ?: null,
+        'updated_at'      => date('Y-m-d H:i:s'),
+    ], 'id = ?', [$id]);
+});
+
 flash('success', 'Данные обновлены.');
 redirect('../main.php?page=persons');

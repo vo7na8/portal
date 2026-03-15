@@ -24,22 +24,28 @@ if ($exists) {
 }
 
 // Валидация дат
-$birthDate    = $_POST['birth_date']    ?: null;
+$birthDate     = $_POST['birth_date']     ?: null;
 $edsValidUntil = $_POST['eds_valid_until'] ?: null;
 if ($birthDate && strtotime($birthDate) > time()) {
     flash('error', 'Дата рождения не может быть в будущем.');
     redirect('../main.php?page=persons');
 }
 
-$db->insert('persons', [
-    'last_name'       => $lastName,
-    'first_name'      => $firstName,
-    'middle_name'     => $middleName ?: null,
-    'birth_date'      => $birthDate,
-    'has_eds'         => isset($_POST['has_eds']) ? 1 : 0,
-    'eds_cert_number' => trim($_POST['eds_cert_number'] ?? '') ?: null,
-    'eds_valid_until' => $edsValidUntil,
-    'note'            => trim($_POST['note'] ?? '') ?: null,
-]);
+// Транзакция: INSERT persons + автосинхронизация в birthdays если дата рождения задана
+$db->transaction(function($db) use ($lastName, $firstName, $middleName, $birthDate, $edsValidUntil) {
+    $personId = $db->insert('persons', [
+        'last_name'       => $lastName,
+        'first_name'      => $firstName,
+        'middle_name'     => $middleName ?: null,
+        'birth_date'      => $birthDate,
+        'has_eds'         => isset($_POST['has_eds']) ? 1 : 0,
+        'eds_cert_number' => trim($_POST['eds_cert_number'] ?? '') ?: null,
+        'eds_valid_until' => $edsValidUntil,
+        'note'            => trim($_POST['note'] ?? '') ?: null,
+    ]);
+    // Больше ничего — birthdays теперь читается динамически из persons
+    return $personId;
+});
+
 flash('success', 'Физическое лицо добавлено.');
 redirect('../main.php?page=persons');

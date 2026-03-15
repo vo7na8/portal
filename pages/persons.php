@@ -14,7 +14,7 @@ $sqlParams = $search ? [$likeParam, $likeParam, $likeParam] : [];
 
 $persons = $db->select(
     "SELECT p.*,
-        GROUP_CONCAT(e.position || ' (' || COALESCE(d.short_name, d.name) || ')', '; ') AS positions
+        GROUP_CONCAT(e.position || ' (' || COALESCE(d.short_name, d.name, '—') || ')', '; ') AS positions
      FROM persons p
      LEFT JOIN employees e ON e.person_id = p.id AND e.is_active = 1
      LEFT JOIN departments d ON d.id = e.department_id
@@ -24,20 +24,27 @@ $persons = $db->select(
     $sqlParams
 );
 
-// --- ОПТИМИЗАЦИЯ: загружаем [ДО цикла] все должности и отделения одним запросом ---
+// --- ОПТИМИЗАЦИЯ N+1: загружаем ВСЁ одним запросом ДО цикла ---
+// Все отделения с подразделением для select-ов
 $allDepts = $db->select(
-    'SELECT d.id, d.name, d.short_name, dv.name AS div_name
-     FROM departments d LEFT JOIN divisions dv ON dv.id=d.division_id ORDER BY dv.name, d.name'
+    'SELECT d.id, d.name, d.short_name,
+            COALESCE(dv.short_name, dv.name) AS div_label
+     FROM departments d
+     LEFT JOIN divisions dv ON dv.id = d.division_id
+     ORDER BY div_label NULLS LAST, d.name'
 );
 
+// Все должности одним запросом
 $rawEmployees = $db->select(
-    'SELECT e.*, e.id AS emp_id, d.name AS dept_name, dv.name AS div_name
+    'SELECT e.*, e.id AS emp_id,
+            d.name AS dept_name, d.short_name AS dept_short,
+            COALESCE(dv.short_name, dv.name) AS div_name
      FROM employees e
-     LEFT JOIN departments d ON d.id = e.department_id
-     LEFT JOIN divisions dv ON dv.id = d.division_id
+     LEFT JOIN departments d  ON d.id  = e.department_id
+     LEFT JOIN divisions   dv ON dv.id = d.division_id
      ORDER BY e.is_active DESC, e.hire_date DESC'
 );
-// Группируем по person_id
+// Группируем по person_id в PHP — 0 доп. запросов в цикле
 $employeesByPerson = [];
 foreach ($rawEmployees as $emp) {
     $employeesByPerson[(int)$emp['person_id']][] = $emp;
@@ -86,7 +93,6 @@ foreach ($rawEmployees as $emp) {
 <?php foreach ($persons as $p):
     $pid  = (int)$p['id'];
     $fio  = e($p['last_name']) . ' ' . e($p['first_name']) . (trim($p['middle_name'] ?? '') ? ' ' . e($p['middle_name']) : '');
-    // ОПТИМИЗАЦИЯ: берём из предзагруженного массива
     $deps = $employeesByPerson[$pid] ?? [];
 ?>
 <div class="card mb-1">
@@ -142,9 +148,21 @@ foreach ($rawEmployees as $emp) {
                     <label>Отделение</label>
                     <select name="department_id">
                         <option value="">— не указано —</option>
-                        <?php foreach ($allDepts as $d): ?>
-                        <option value="<?= (int)$d['id'] ?>"><?= e($d['div_name'] ?? '') ?> / <?= e($d['name']) ?></option>
-                        <?php endforeach; ?>
+                        <?php
+                        $prevDiv = null;
+                        foreach ($allDepts as $d):
+                            // Группировка по подразделению через optgroup
+                            $curDiv = $d['div_label'] ?? null;
+                            if ($curDiv !== $prevDiv):
+                                if ($prevDiv !== null) echo '</optgroup>';
+                                echo '<optgroup label="' . e($curDiv ?? 'Без подразделения') . '">';
+                                $prevDiv = $curDiv;
+                            endif;
+                        ?>
+                        <option value="<?= (int)$d['id'] ?>"><?= e($d['short_name'] ?? $d['name']) ?></option>
+                        <?php endforeach;
+                        if ($prevDiv !== null) echo '</optgroup>';
+                        ?>
                     </select>
                 </div>
                 <div class="form-group"><label>Должность *</label><input type="text" name="position" required maxlength="255"></div>
@@ -167,7 +185,10 @@ foreach ($rawEmployees as $emp) {
                     <span style="font-weight:500"><?= e($emp['position']) ?></span>
                     <?php if (!$emp['is_active']): ?><span class="badge badge-closed" style="font-size:.7rem">Уволен</span><?php endif; ?>
                     <div class="text-muted" style="font-size:.8rem">
-                        <?= e($emp['div_name'] ?? '') ?><?= !empty($emp['div_name']) ? ' / ' : '' ?><?= e($emp['dept_name'] ?? 'Без отделения') ?>
+                        <?php
+                        $deptLabel = trim(($emp['div_name'] ? $emp['div_name'] . ' / ' : '') . ($emp['dept_name'] ?? ''));
+                        echo e($deptLabel ?: 'Без отделения');
+                        ?>
                         <?php if ($emp['contract_number']): ?> &bull; Дог.: <?= e($emp['contract_number']) ?><?php endif; ?>
                         <?php if ($emp['hire_date']): ?> &bull; С: <?= format_date($emp['hire_date']) ?><?php endif; ?>
                         <?php if ($emp['fire_date']): ?> по <?= format_date($emp['fire_date']) ?><?php endif; ?>
@@ -207,11 +228,22 @@ foreach ($rawEmployees as $emp) {
                             <label>Отделение</label>
                             <select name="department_id">
                                 <option value="">— не указано —</option>
-                                <?php foreach ($allDepts as $d): ?>
-                                <option value="<?= (int)$d['id'] ?>" <?= (int)$emp['department_id'] === (int)$d['id'] ? 'selected' : '' ?>>
-                                    <?= e($d['div_name'] ?? '') ?> / <?= e($d['name']) ?>
+                                <?php
+                                $prevDiv2 = null;
+                                foreach ($allDepts as $d):
+                                    $curDiv2 = $d['div_label'] ?? null;
+                                    if ($curDiv2 !== $prevDiv2):
+                                        if ($prevDiv2 !== null) echo '</optgroup>';
+                                        echo '<optgroup label="' . e($curDiv2 ?? 'Без подразделения') . '">';
+                                        $prevDiv2 = $curDiv2;
+                                    endif;
+                                ?>
+                                <option value="<?= (int)$d['id'] ?>" <?= (int)($emp['department_id'] ?? 0) === (int)$d['id'] ? 'selected' : '' ?>>
+                                    <?= e($d['short_name'] ?? $d['name']) ?>
                                 </option>
-                                <?php endforeach; ?>
+                                <?php endforeach;
+                                if ($prevDiv2 !== null) echo '</optgroup>';
+                                ?>
                             </select>
                         </div>
                         <div class="form-group"><label>Должность *</label><input type="text" name="position" value="<?= e($emp['position']) ?>" required maxlength="255"></div>

@@ -12,6 +12,13 @@ if ($personId <= 0 || $position === '') {
     redirect('../main.php?page=persons');
 }
 
+// Проверяем что физлицо существует
+$personExists = $db->selectValue('SELECT COUNT(*) FROM persons WHERE id=?', [$personId]);
+if (!$personExists) {
+    flash('error', 'Физическое лицо не найдено.');
+    redirect('../main.php?page=persons');
+}
+
 $deptId   = (int)($_POST['department_id'] ?? 0) ?: null;
 $hireDate = $_POST['hire_date'] ?: null;
 $fireDate = $_POST['fire_date'] ?: null;
@@ -32,14 +39,17 @@ if ($exists) {
     redirect('../main.php?page=persons');
 }
 
-$db->insert('employees', [
-    'person_id'       => $personId,
-    'department_id'   => $deptId,
-    'position'        => $position,
-    'contract_number' => trim($_POST['contract_number'] ?? '') ?: null,
-    'hire_date'       => $hireDate,
-    'fire_date'       => $fireDate,
-    'is_active'       => 1,
-]);
+$db->transaction(function($db) use ($personId, $deptId, $position, $hireDate, $fireDate) {
+    $db->insert('employees', [
+        'person_id'       => $personId,
+        'department_id'   => $deptId,
+        'position'        => $position,
+        'contract_number' => trim($_POST['contract_number'] ?? '') ?: null,
+        'hire_date'       => $hireDate,
+        'fire_date'       => $fireDate,
+        'is_active'       => 1,
+    ]);
+});
+
 flash('success', 'Должность добавлена.');
 redirect('../main.php?page=persons');
