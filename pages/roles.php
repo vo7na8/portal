@@ -11,13 +11,11 @@ $roles = $db->select('
 $permissions = $db->select('SELECT * FROM permissions ORDER BY name');
 $rolePerms   = [];
 foreach ($roles as $r) {
-    $rolePerms[$r['id']] = $db->select(
-        'SELECT permission_id FROM role_permissions WHERE role_id=?',
-        [$r['id']]
+    $rolePerms[$r['id']] = array_column(
+        $db->select('SELECT permission_id FROM role_permissions WHERE role_id=?', [$r['id']]),
+        'permission_id'
     );
-    $rolePerms[$r['id']] = array_column($rolePerms[$r['id']], 'permission_id');
 }
-// Группируем пермиссии по префиксу
 $permGroups = [];
 foreach ($permissions as $p) {
     $prefix = explode('_', $p['name'])[0];
@@ -37,20 +35,17 @@ $groupLabels = [
 ?>
 <h2 class="section-title">Роли и права</h2>
 
-<!-- Новая роль -->
 <div class="form-container">
     <div class="card-title mb-2">Создать роль</div>
     <form method="post" action="handlers/add_role.php">
         <?= csrf_field() ?>
         <div class="form-row">
             <div class="form-group"><label>Название</label><input type="text" name="name" required maxlength="100"></div>
-            <div class="form-group"><label>Описание</label><input type="text" name="description" maxlength="255"></div>
         </div>
         <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Создать</button>
     </form>
 </div>
 
-<!-- Матрица прав -->
 <?php foreach ($roles as $role):
     $rid = (int)$role['id'];
 ?>
@@ -58,14 +53,11 @@ $groupLabels = [
     <div class="card-header">
         <div>
             <span class="card-title"><?= e($role['name']) ?></span>
-            <?php if ($role['description']): ?>
-            <span class="text-muted" style="font-size:.85rem;margin-left:.5rem"><?= e($role['description']) ?></span>
-            <?php endif; ?>
             <span class="badge badge-new" style="margin-left:.6rem">
                 <i class="fas fa-users" style="font-size:.7rem"></i> <?= (int)$role['user_count'] ?>
             </span>
         </div>
-        <?php if (strtolower($role['name']) !== 'admin'): ?>
+        <?php if (strtolower($role['name']) !== 'администратор'): ?>
         <form method="post" action="handlers/delete_role.php" style="display:inline">
             <?= csrf_field() ?>
             <input type="hidden" name="id" value="<?= $rid ?>">
@@ -80,7 +72,6 @@ $groupLabels = [
     <form method="post" action="handlers/update_role_permissions.php">
         <?= csrf_field() ?>
         <input type="hidden" name="role_id" value="<?= $rid ?>">
-
         <?php foreach ($permGroups as $prefix => $perms): ?>
         <div style="margin-bottom:.8rem">
             <div class="text-muted" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.4rem">
@@ -101,7 +92,6 @@ $groupLabels = [
             </div>
         </div>
         <?php endforeach; ?>
-
         <button type="submit" class="btn btn-secondary btn-sm mt-1">
             <i class="fas fa-floppy-disk"></i> Сохранить права
         </button>

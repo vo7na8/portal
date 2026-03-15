@@ -6,21 +6,28 @@ if (!hasPermission($pdo, 'view_equipment')) {
 $db         = Database::getInstance();
 $canAdd     = hasPermission($pdo, 'add_equipment');
 $canDelete  = hasPermission($pdo, 'delete_equipment');
-$canComment = hasPermission($pdo, 'add_comment');
+$canComment = hasPermission($pdo, 'add_equipment'); // используем существующее право
+
+// Список пользователей для выпадающего списка ответственных
+$allUsers = $db->select('SELECT id, full_name FROM users ORDER BY full_name');
 
 // Список техники (с кэшем)
 $equipments = cacheGet('equipment_list', 600);
 if (!$equipments) {
-    $equipments = $db->select('SELECT * FROM equipment ORDER BY name');
+    $equipments = $db->select(
+        'SELECT e.*, u.full_name AS responsible_name
+         FROM equipment e
+         LEFT JOIN users u ON e.responsible_id = u.id
+         ORDER BY e.name'
+    );
     if ($equipments) cacheSet('equipment_list', $equipments);
 }
 
-// Статусы
 $statusMap = [
-    'рабочее'      => 'badge-done',
-    'неисправное'  => 'badge-new',
-    'на ремонте'   => 'badge-progress',
-    'списано'       => 'badge-closed',
+    'рабочее'    => 'badge-done',
+    'неисправное' => 'badge-new',
+    'на ремонте'  => 'badge-progress',
+    'списано'      => 'badge-closed',
 ];
 ?>
 <h2 class="section-title">Техника</h2>
@@ -31,12 +38,12 @@ $statusMap = [
     <form method="post" action="handlers/add_equipment.php">
         <?= csrf_field() ?>
         <div class="form-row">
-            <div class="form-group"><label>Название</label><input type="text" name="name" required maxlength="255"></div>
-            <div class="form-group"><label>Тип</label><input type="text" name="type" required maxlength="100"></div>
+            <div class="form-group"><label>Название *</label><input type="text" name="name" required maxlength="255"></div>
+            <div class="form-group"><label>Тип</label><input type="text" name="type" maxlength="100"></div>
         </div>
         <div class="form-row">
-            <div class="form-group"><label>Расположение</label><input type="text" name="location" required maxlength="255"></div>
-            <div class="form-group"><label>Инвентарный номер</label><input type="text" name="inventory_no" maxlength="100"></div>
+            <div class="form-group"><label>Расположение</label><input type="text" name="location" maxlength="255"></div>
+            <div class="form-group"><label>Инв. номер</label><input type="text" name="inventory_number" maxlength="100"></div>
         </div>
         <div class="form-row">
             <div class="form-group">
@@ -48,7 +55,15 @@ $statusMap = [
                     <option value="списано">Списано</option>
                 </select>
             </div>
-            <div class="form-group"><label>Ответственный</label><input type="text" name="responsible" maxlength="255"></div>
+            <div class="form-group">
+                <label>Ответственный</label>
+                <select name="responsible_id">
+                    <option value="">— не выбран —</option>
+                    <?php foreach ($allUsers as $u): ?>
+                    <option value="<?= (int)$u['id'] ?>"><?= e($u['full_name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
         </div>
         <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Добавить</button>
     </form>
@@ -60,9 +75,11 @@ $statusMap = [
 <?php else: ?>
 <div class="item-list">
 <?php foreach ($equipments as $eq):
-    $eqId    = (int)$eq['id'];
+    $eqId     = (int)$eq['id'];
     $comments = $db->select(
-        'SELECT c.*, u.full_name FROM comments c JOIN users u ON c.user_id=u.id WHERE c.equipment_id=? ORDER BY c.created_at DESC',
+        'SELECT ec.*, u.full_name FROM equipment_comments ec
+         LEFT JOIN users u ON ec.user_id = u.id
+         WHERE ec.equipment_id = ? ORDER BY ec.created_at DESC',
         [$eqId]
     );
 ?>
@@ -74,16 +91,16 @@ $statusMap = [
                     <span class="badge <?= $statusMap[$eq['status'] ?? ''] ?? 'badge-closed' ?>"><?= e($eq['status'] ?? '') ?></span>
                 </div>
                 <div class="text-muted mt-1" style="font-size:.82rem">
-                    <i class="fas fa-tag"></i> <?= e($eq['type'] ?? '') ?>
-                    &nbsp;<i class="fas fa-location-dot"></i> <?= e($eq['location'] ?? '') ?>
-                    <?php if (!empty($eq['inventory_no'])): ?>&nbsp;<i class="fas fa-barcode"></i> <?= e($eq['inventory_no']) ?><?php endif; ?>
-                    <?php if (!empty($eq['responsible'])): ?>&nbsp;<i class="fas fa-user-tie"></i> <?= e($eq['responsible']) ?><?php endif; ?>
+                    <?php if (!empty($eq['type'])): ?><i class="fas fa-tag"></i> <?= e($eq['type']) ?>&nbsp;<?php endif; ?>
+                    <?php if (!empty($eq['location'])): ?><i class="fas fa-location-dot"></i> <?= e($eq['location']) ?>&nbsp;<?php endif; ?>
+                    <?php if (!empty($eq['inventory_number'])): ?><i class="fas fa-barcode"></i> <?= e($eq['inventory_number']) ?>&nbsp;<?php endif; ?>
+                    <?php if (!empty($eq['responsible_name'])): ?><i class="fas fa-user-tie"></i> <?= e($eq['responsible_name']) ?><?php endif; ?>
                 </div>
             </div>
             <div class="item-actions">
                 <?php if ($canComment): ?>
                 <button class="btn btn-secondary btn-sm" data-toggle-comments="comments-<?= $eqId ?>">
-                    <i class="fas fa-comments"></i> <?= count($comments) ?>
+                    <i class="fas fa-comments"></i> <span class="comment-count"><?= count($comments) ?></span>
                 </button>
                 <?php endif; ?>
                 <?php if ($canDelete): ?>
@@ -113,9 +130,9 @@ $statusMap = [
             <div class="comment-list">
                 <?php foreach ($comments as $c): ?>
                 <div class="comment-item">
-                    <strong><?= e($c['full_name']) ?></strong>
+                    <strong><?= e($c['full_name'] ?? 'Удалён') ?></strong>
                     <span class="comment-date"><?= format_datetime($c['created_at']) ?></span><br>
-                    <span style="font-size:.88rem"><?= e($c['comment']) ?></span>
+                    <span style="font-size:.88rem"><?= e($c['body']) ?></span>
                 </div>
                 <?php endforeach; ?>
             </div>
