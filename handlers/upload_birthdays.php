@@ -1,35 +1,27 @@
 <?php
 require_once __DIR__ . '/../auth.php';
-if (!hasPermission($pdo, 'upload_birthdays')) { flash('error', 'Недостаточно прав'); redirect('main.php?page=birthdays'); }
+if (!hasPermission($pdo, 'view_birthdays')) { flash('error', 'Недостаточно прав'); redirect('../main.php?page=birthdays'); }
 $security->requireCsrf();
-if (!isset($_FILES['csv_file'])) { flash('error', 'Файл не передан.'); redirect('main.php?page=birthdays'); }
-$err = $security->validateUpload($_FILES['csv_file']);
-if ($err) { flash('error', $err); redirect('main.php?page=birthdays'); }
-$ext = strtolower(pathinfo($_FILES['csv_file']['name'], PATHINFO_EXTENSION));
-if ($ext !== 'csv') { flash('error', 'Допустимы только CSV-файлы.'); redirect('main.php?page=birthdays'); }
-$uploadDir = __DIR__ . '/../uploads/temp/';
-if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
-$tmpPath = $uploadDir . $security->safeFilename($_FILES['csv_file']['name']);
-if (!move_uploaded_file($_FILES['csv_file']['tmp_name'], $tmpPath)) {
-    flash('error', 'Ошибка сохранения файла.');
-    redirect('main.php?page=birthdays');
+if (empty($_FILES['csv_file']) || $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
+    flash('error', 'Файл не загружен.');
+    redirect('../main.php?page=birthdays');
 }
-$count = 0;
-$errors = 0;
-$db = Database::getInstance();
-if (($handle = fopen($tmpPath, 'r')) !== false) {
-    $firstLine = true;
-    while (($row = fgetcsv($handle, 1000, ',')) !== false) {
-        if ($firstLine) { $firstLine = false; continue; }
-        if (count($row) < 2) { $errors++; continue; }
-        $name = trim($row[0]);
-        $date = trim($row[1]);
-        if (!$name || !strtotime($date)) { $errors++; continue; }
-        $db->execute('INSERT OR REPLACE INTO birthdays (full_name, birth_date) VALUES (?, ?)', [$name, date('Y-m-d', strtotime($date))]);
-        $count++;
-    }
-    fclose($handle);
+$uploadError = $security->validateUpload($_FILES['csv_file']);
+if ($uploadError) { flash('error', $uploadError); redirect('../main.php?page=birthdays'); }
+$handle = fopen($_FILES['csv_file']['tmp_name'], 'r');
+if (!$handle) { flash('error', 'Не удалось открыть файл.'); redirect('../main.php?page=birthdays'); }
+$db      = Database::getInstance();
+$count   = 0;
+$skipped = 0;
+fgets($handle); // пропускаем заголовок
+while (($row = fgetcsv($handle, 500, ';')) !== false) {
+    if (count($row) < 2) { $skipped++; continue; }
+    $name = trim($row[0]);
+    $date = trim($row[1]);
+    if (!$name || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) { $skipped++; continue; }
+    $db->insert('birthdays', ['full_name' => $name, 'birth_date' => $date, 'note' => trim($row[2] ?? '')]);
+    $count++;
 }
-@unlink($tmpPath);
-flash('success', "Загружено записей: {$count}" . ($errors ? ". Пропущено строк: {$errors}." : '.'));
-redirect('main.php?page=birthdays');
+fclose($handle);
+flash('success', "Загружено: {$count}, пропущено: {$skipped}.");
+redirect('../main.php?page=birthdays');

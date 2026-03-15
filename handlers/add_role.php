@@ -1,16 +1,11 @@
 <?php
 require_once __DIR__ . '/../auth.php';
-if (!hasPermission($pdo, 'manage_roles')) { flash('error', 'Недостаточно прав'); redirect('main.php?page=roles'); }
+if (!hasPermission($pdo, 'manage_roles')) { flash('error', 'Недостаточно прав'); redirect('../main.php?page=roles'); }
 $security->requireCsrf();
-$v = Validator::make($_POST);
-if (!$v->validate(['name' => 'required|max:100', 'description' => 'nullable|max:255'])) {
-    flash('error', $v->firstErrorMessage());
-} else {
-    $d = $v->validated();
-    Database::getInstance()->insert('roles', [
-        'name'        => $d['name'],
-        'description' => $d['description'] ?? '',
-    ]);
-    flash('success', 'Роль создана.');
-}
-redirect('main.php?page=roles');
+$name = trim($_POST['name'] ?? '');
+if ($name === '') { flash('error', 'Название роли обязательно.'); redirect('../main.php?page=roles'); }
+$exists = Database::getInstance()->selectValue('SELECT COUNT(*) FROM roles WHERE name = ?', [$name]);
+if ($exists) { flash('error', 'Роль с таким названием уже существует.'); redirect('../main.php?page=roles'); }
+Database::getInstance()->insert('roles', ['name' => $name]);
+flash('success', 'Роль создана.');
+redirect('../main.php?page=roles');

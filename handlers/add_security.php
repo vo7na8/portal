@@ -1,17 +1,18 @@
 <?php
 require_once __DIR__ . '/../auth.php';
-if (!hasPermission($pdo, 'add_security')) { flash('error', 'Недостаточно прав'); redirect('main.php?page=security'); }
+if (!hasPermission($pdo, 'add_security')) { flash('error', 'Недостаточно прав'); redirect('../main.php?page=security'); }
 $security->requireCsrf();
 $v = Validator::make($_POST);
-if (!$v->validate(['title' => 'required|max:255', 'description' => 'required'])) {
+if (!$v->validate(['title' => 'required|max:255'])) {
     flash('error', $v->firstErrorMessage());
-} else {
-    $d = $v->validated();
-    Database::getInstance()->insert('security', [
-        'title'       => $d['title'],
-        'description' => $d['description'],
-        'created_at'  => date('Y-m-d H:i:s'),
-    ]);
-    flash('success', 'Запись добавлена.');
+    redirect('../main.php?page=security');
 }
-redirect('main.php?page=security');
+$d = $v->validated();
+Database::getInstance()->insert('security_incidents', [
+    'title'       => $d['title'],
+    'description' => trim($_POST['description'] ?? ''),
+    'severity'    => in_array($_POST['severity'] ?? '', ['низкая', 'средняя', 'высокая']) ? $_POST['severity'] : 'низкая',
+    'author_id'   => (int)$_SESSION['user_id'],
+]);
+flash('success', 'Инцидент зафиксирован.');
+redirect('../main.php?page=security');

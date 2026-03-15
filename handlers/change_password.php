@@ -1,30 +1,25 @@
 <?php
 require_once __DIR__ . '/../auth.php';
 $security->requireCsrf();
-$uid = (int)$_SESSION['user_id'];
-$v   = Validator::make($_POST);
-if (!$v->validate([
-    'current_password'      => 'required',
-    'new_password'          => 'required|password',
-    'new_password_confirmation' => 'required',
-])) {
-    $session->flash('pwd_error', $v->firstErrorMessage());
-    redirect('main.php?page=profile');
+$current  = $_POST['current_password'] ?? '';
+$new      = $_POST['new_password']     ?? '';
+$confirm  = $_POST['confirm_password'] ?? '';
+if ($new === '' || strlen($new) < 6) {
+    flash('error', 'Новый пароль должен быть не менее 6 символов.');
+    redirect('../main.php?page=profile');
 }
-$d    = $v->validated();
-$user = Database::getInstance()->selectOne('SELECT password_hash FROM users WHERE id=?', [$uid]);
-if (!$user || !$security->verifyPassword($_POST['current_password'], $user['password_hash'])) {
-    $session->flash('pwd_error', 'Текущий пароль неверен.');
-    redirect('main.php?page=profile');
+if ($new !== $confirm) {
+    flash('error', 'Пароли не совпадают.');
+    redirect('../main.php?page=profile');
 }
-if ($_POST['new_password'] !== $_POST['new_password_confirmation']) {
-    $session->flash('pwd_error', 'Пароли не совпадают.');
-    redirect('main.php?page=profile');
+$user = Database::getInstance()->selectOne('SELECT * FROM users WHERE id = ?', [(int)$_SESSION['user_id']]);
+if (!$user || !$security->verifyPassword($current, $user['password_hash'])) {
+    flash('error', 'Неверный текущий пароль.');
+    redirect('../main.php?page=profile');
 }
 Database::getInstance()->update('users',
-    ['password_hash' => $security->hashPassword($_POST['new_password'])],
-    'id = ?', [$uid]
+    ['password_hash' => $security->hashPassword($new)],
+    'id = ?', [(int)$_SESSION['user_id']]
 );
-$logger->info('Password changed', ['user_id' => $uid]);
-$session->flash('pwd_success', 'Пароль успешно изменён.');
-redirect('main.php?page=profile');
+flash('success', 'Пароль успешно изменён.');
+redirect('../main.php?page=profile');
