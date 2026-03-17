@@ -1,11 +1,30 @@
 <?php
 /**
  * AJAX: Возвращает поля шаблона для динамической формы создания заявки
- * Контекст ($pdo, isLoggedIn, jsonError, jsonSuccess) предоставляется config.php
  */
 require_once __DIR__ . '/../config.php';
 
-if (!isLoggedIn()) { jsonError('Не авторизован', 401); }
+header('Content-Type: application/json; charset=utf-8');
+
+if (!function_exists('jsonSuccess')) {
+    function jsonSuccess(mixed $data = [], int $code = 200): never {
+        http_response_code($code);
+        echo json_encode(['success' => true] + (array)$data);
+        exit;
+    }
+}
+if (!function_exists('jsonError')) {
+    function jsonError(string $message, int $code = 400): never {
+        http_response_code($code);
+        echo json_encode(['success' => false, 'error' => $message]);
+        exit;
+    }
+}
+
+// Проверка авторизации: используем те же данные сессии, что и hasPermission()
+if (empty($_SESSION['user_id'])) {
+    jsonError('Не авторизован', 401);
+}
 
 $template_id = (int)($_GET['template_id'] ?? 0);
 if (!$template_id) { jsonError('Не указан ID шаблона'); }
@@ -52,6 +71,6 @@ try {
         'fields'   => $fieldRows
     ]);
 } catch (PDOException $e) {
-    logError('get_template_fields: ' . $e->getMessage());
+    $logger->error('get_template_fields: ' . $e->getMessage());
     jsonError('Ошибка получения полей шаблона');
 }
