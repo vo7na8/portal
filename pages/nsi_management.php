@@ -38,7 +38,8 @@ if ($activeDictId) {
     $nsiValues = $vStmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-$csrfToken = generateCsrf();
+// fix: была generateCsrf() — функция не существует; правильный хелпер csrf_token()
+$csrfToken = csrf_token();
 ?>
 
 <div class="page-header">
