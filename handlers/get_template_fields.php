@@ -21,7 +21,6 @@ if (!function_exists('jsonError')) {
     }
 }
 
-// Проверка авторизации: используем те же данные сессии, что и hasPermission()
 if (empty($_SESSION['user_id'])) {
     jsonError('Не авторизован', 401);
 }
@@ -39,9 +38,10 @@ try {
     $tmpl = $template->fetch(PDO::FETCH_ASSOC);
     if (!$tmpl) { jsonError('Шаблон не найден', 404); }
 
+    // fix: колонка называется validation_json (см. миграцию), не validation_rules
     $fields = $pdo->prepare('
         SELECT id, field_name, field_type, field_label, placeholder,
-               is_required, sort_order, options_source, validation_rules
+               is_required, sort_order, options_source, validation_json, help_text
         FROM template_fields
         WHERE template_id = ?
         ORDER BY sort_order ASC, id ASC
@@ -49,9 +49,11 @@ try {
     $fields->execute([$template_id]);
     $fieldRows = $fields->fetchAll(PDO::FETCH_ASSOC);
 
-    // Для полей типа select с options_source — подгружаем значения НСИ
     foreach ($fieldRows as &$f) {
-        $f['validation_rules'] = $f['validation_rules'] ? json_decode($f['validation_rules'], true) : null;
+        // Декодируем validation_json и отдаём фронту как validation_rules для совместимости
+        $f['validation_rules'] = $f['validation_json'] ? json_decode($f['validation_json'], true) : null;
+        unset($f['validation_json']);
+
         if ($f['field_type'] === 'select' && $f['options_source']) {
             $nsi = $pdo->prepare('
                 SELECT nv.value, nv.display_text

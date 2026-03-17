@@ -91,7 +91,6 @@ try {
     // ----------------------------------------------------------------
     // 3. Расширение таблицы requests
     // ----------------------------------------------------------------
-    // Добавляем поля, только если их ещё нет
     $cols = array_column($pdo->query('PRAGMA table_info(requests)')->fetchAll(PDO::FETCH_ASSOC), 'name');
 
     if (!in_array('request_number', $cols)) {
@@ -125,7 +124,7 @@ try {
     $done[] = 'request_field_values';
 
     // ----------------------------------------------------------------
-    // 5. Отслеживание прочтения (Sprint 5 — таблица создаётся сейчас)
+    // 5. Отслеживание прочтения
     // ----------------------------------------------------------------
     $pdo->exec("CREATE TABLE IF NOT EXISTS request_read_status (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -169,8 +168,6 @@ try {
     // 7. Новые permissions
     // fix: таблица permissions может не содержать колонку description — добавляем при необходимости
     // ----------------------------------------------------------------
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
     $permCols = array_column(
         $pdo->query('PRAGMA table_info(permissions)')->fetchAll(PDO::FETCH_ASSOC),
         'name'
@@ -180,29 +177,13 @@ try {
         $done[] = 'permissions.description (добавлена колонка)';
     }
 
-=======
-=======
->>>>>>> Stashed changes
-	$permCols = array_column(
-		$pdo->query('PRAGMA table_info(permissions)')->fetchAll(PDO::FETCH_ASSOC),
-		'name'
-	);
-	if (!in_array('description', $permCols)) {
-		$pdo->exec('ALTER TABLE permissions ADD COLUMN description TEXT');
-		$done[] = 'permissions.description (добавлена колонка)';
-	}
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
     $newPerms = [
-        ['manage_templates',     'Управление шаблонами заявок'],
-        ['view_nsi',             'Просмотр справочников НСИ'],
-        ['manage_nsi',           'Управление справочниками НСИ'],
-        ['view_all_requests',    'Видеть все заявки (без фильтра)'],
-        ['manage_request_access','Управление доступом к категориям заявок'],
+        ['manage_templates',      'Управление шаблонами заявок'],
+        ['view_nsi',              'Просмотр справочников НСИ'],
+        ['manage_nsi',            'Управление справочниками НСИ'],
+        ['view_all_requests',     'Видеть все заявки (без фильтра)'],
+        ['manage_request_access', 'Управление доступом к категориям заявок'],
     ];
-    // fix: используем prepare/execute вместо интерполяции строки в SQL
     $stmtIns = $pdo->prepare('INSERT OR IGNORE INTO permissions (name, description) VALUES (?, ?)');
     foreach ($newPerms as [$name, $desc]) {
         $stmtIns->execute([$name, $desc]);
@@ -227,7 +208,6 @@ try {
     // ----------------------------------------------------------------
     // 8. Предзаполненные данные НСИ
     // ----------------------------------------------------------------
-    // Справочник: Типы техники (единый с модулем Equipment)
     $pdo->exec("INSERT OR IGNORE INTO nsi_dictionaries (code, name, description, sort_order)
         VALUES ('equipment_types', 'Типы техники', 'Используется в заявках и учёте техники', 1)");
     $etId = $pdo->query("SELECT id FROM nsi_dictionaries WHERE code='equipment_types'")->fetchColumn();
@@ -238,7 +218,6 @@ try {
     }
     $done[] = 'НСИ: Типы техники (' . count($equipTypes) . ')';
 
-    // Справочник: Приоритеты заявок
     $pdo->exec("INSERT OR IGNORE INTO nsi_dictionaries (code, name, description, sort_order)
         VALUES ('request_priorities', 'Приоритеты заявок', 'Уровни срочности обращений', 2)");
     $prId = $pdo->query("SELECT id FROM nsi_dictionaries WHERE code='request_priorities'")->fetchColumn();
@@ -254,35 +233,32 @@ try {
     $done[] = 'НСИ: Приоритеты заявок (4)';
 
     // ----------------------------------------------------------------
-    // 9. Базовый шаблон «Общая заявка» для старых записей
+    // 9. Базовые шаблоны
     // ----------------------------------------------------------------
     $pdo->exec("INSERT OR IGNORE INTO request_templates
         (category_code, category_name, title_template, icon, description, sort_order)
         VALUES ('GN', 'Общая заявка', '{title}', 'fa-file-alt', 'Шаблон для произвольных заявок', 0)");
 
-    // Шаблон «Поломка техники»
     $pdo->exec("INSERT OR IGNORE INTO request_templates
         (category_code, category_name, title_template, icon, description, sort_order)
         VALUES ('PT', 'Поломка техники', 'Поломка: {equipment_type} — {equipment_name}', 'fa-screwdriver-wrench', 'Заявка на ремонт или замену оборудования', 1)");
 
-    // Поля шаблона «Поломка техники»
     $ptId = $pdo->query("SELECT id FROM request_templates WHERE category_code='PT'")->fetchColumn();
     if ($ptId) {
-        $fields = [
-            ['description',    'textarea', 'Описание проблемы',   '',                    1, 1,  null,              null,                           null,           'Опишите подробно, что произошло'],
-            ['equipment_type', 'select',   'Тип техники',         '',                    1, 2,  'equipment_types', null,                           null,           null],
-            ['equipment_name', 'select',   'Наименование техники','',                    1, 3,  'department_equipment', null,                      null,           'Выберите технику, закреплённую за вашим отделом'],
+        $ptFields = [
+            ['description',    'textarea', 'Описание проблемы',    '',  1, 1, null,                 null, null, 'Опишите подробно, что произошло'],
+            ['equipment_type', 'select',   'Тип техники',          '',  1, 2, 'equipment_types',    null, null, null],
+            ['equipment_name', 'select',   'Наименование техники', '',  1, 3, 'department_equipment', null, null, 'Выберите технику, закреплённую за вашим отделом'],
         ];
         $stmtF = $pdo->prepare('INSERT OR IGNORE INTO template_fields
             (template_id, field_name, field_type, field_label, placeholder, is_required, sort_order, options_source, options_static, validation_json, help_text)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        foreach ($fields as $f) {
+        foreach ($ptFields as $f) {
             $stmtF->execute(array_merge([$ptId], $f));
         }
     }
     $done[] = 'Шаблон: Поломка техники + поля';
 
-    // Шаблон «ЕМИАС»
     $pdo->exec("INSERT OR IGNORE INTO request_templates
         (category_code, category_name, title_template, icon, description, sort_order)
         VALUES ('EM', 'ЕМИАС', 'ЕМИАС: {description}', 'fa-laptop-medical', 'Обращения по системе ЕМИАС', 2)");
@@ -291,8 +267,8 @@ try {
         $stmtF = $pdo->prepare('INSERT OR IGNORE INTO template_fields
             (template_id, field_name, field_type, field_label, placeholder, is_required, sort_order, options_source, options_static, validation_json, help_text)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        $stmtF->execute([$emId, 'description',      'textarea', 'Описание проблемы',  '',              1, 1, null, null, null, null]);
-        $stmtF->execute([$emId, 'assistant_number', 'text',     'Номер Ассистент',    '000 000 000',   1, 2, null, null,
+        $stmtF->execute([$emId, 'description',      'textarea', 'Описание проблемы', '',            1, 1, null, null, null, null]);
+        $stmtF->execute([$emId, 'assistant_number', 'text',     'Номер Ассистент',   '000 000 000', 1, 2, null, null,
             json_encode(['pattern' => '^\d{3} \d{3} \d{3}$', 'pattern_message' => 'Формат: nnn nnn nnn']),
             'Номер обращения в системе Ассистент в формате «nnn nnn nnn»']);
     }
