@@ -4,18 +4,20 @@ require_once __DIR__ . '/auth.php';
 $current_page = preg_replace('/[^a-z_]/', '', $_GET['page'] ?? 'dashboard');
 
 $menu_map = [
-    'dashboard'  => ['perm' => 'view_dashboard',  'label' => 'Главная',           'icon' => 'fa-house'],
-    'news'       => ['perm' => 'view_news',        'label' => 'Новости',           'icon' => 'fa-newspaper'],
-    'requests'   => ['perm' => 'view_requests',    'label' => 'Заявки',           'icon' => 'fa-clipboard-list'],
-    'equipment'  => ['perm' => 'view_equipment',   'label' => 'Техника',           'icon' => 'fa-screwdriver-wrench'],
-    'persons'    => ['perm' => 'view_persons',     'label' => 'Люди',              'icon' => 'fa-id-card'],
-    'structure'  => ['perm' => 'view_structure',   'label' => 'Структура',          'icon' => 'fa-sitemap'],
-    'users'      => ['perm' => 'view_users',       'label' => 'Учётные записи',   'icon' => 'fa-users'],
-    'vacations'  => ['perm' => 'view_vacations',   'label' => 'Отпуска',           'icon' => 'fa-umbrella-beach'],
-    'links'      => ['perm' => 'view_links',       'label' => 'Ссылки',            'icon' => 'fa-link'],
-    'security'   => ['perm' => 'view_security',    'label' => 'ИБ',                'icon' => 'fa-shield-halved'],
-    'birthdays'  => ['perm' => 'view_birthdays',   'label' => 'Дни рождения',    'icon' => 'fa-cake-candles'],
-    'roles'      => ['perm' => 'manage_roles',     'label' => 'Роли и права',     'icon' => 'fa-user-shield'],
+    'dashboard'      => ['perm' => 'view_dashboard',  'label' => 'Главная',           'icon' => 'fa-house'],
+    'news'           => ['perm' => 'view_news',        'label' => 'Новости',           'icon' => 'fa-newspaper'],
+    'requests'       => ['perm' => 'view_requests',    'label' => 'Заявки',            'icon' => 'fa-clipboard-list'],
+    'equipment'      => ['perm' => 'view_equipment',   'label' => 'Техника',           'icon' => 'fa-screwdriver-wrench'],
+    'persons'        => ['perm' => 'view_persons',     'label' => 'Люди',              'icon' => 'fa-id-card'],
+    'structure'      => ['perm' => 'view_structure',   'label' => 'Структура',          'icon' => 'fa-sitemap'],
+    'users'          => ['perm' => 'view_users',       'label' => 'Учётные записи',   'icon' => 'fa-users'],
+    'vacations'      => ['perm' => 'view_vacations',   'label' => 'Отпуска',           'icon' => 'fa-umbrella-beach'],
+    'links'          => ['perm' => 'view_links',       'label' => 'Ссылки',            'icon' => 'fa-link'],
+    'security'       => ['perm' => 'view_security',    'label' => 'ИБ',                'icon' => 'fa-shield-halved'],
+    'birthdays'      => ['perm' => 'view_birthdays',   'label' => 'Дни рождения',    'icon' => 'fa-cake-candles'],
+    'nsi_management' => ['perm' => 'view_nsi',         'label' => 'Справочники НСИ',  'icon' => 'fa-database'],
+    'request_templates' => ['perm' => 'manage_templates', 'label' => 'Шаблоны заявок', 'icon' => 'fa-layer-group'],
+    'roles'          => ['perm' => 'manage_roles',     'label' => 'Роли и права',     'icon' => 'fa-user-shield'],
 ];
 
 $menu_items = array_filter($menu_map, fn($v) => hasPermission($pdo, $v['perm']));
