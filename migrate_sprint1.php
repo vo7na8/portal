@@ -169,6 +169,7 @@ try {
     // 7. Новые permissions
     // fix: таблица permissions может не содержать колонку description — добавляем при необходимости
     // ----------------------------------------------------------------
+<<<<<<< Updated upstream
     $permCols = array_column(
         $pdo->query('PRAGMA table_info(permissions)')->fetchAll(PDO::FETCH_ASSOC),
         'name'
@@ -178,6 +179,16 @@ try {
         $done[] = 'permissions.description (добавлена колонка)';
     }
 
+=======
+	$permCols = array_column(
+		$pdo->query('PRAGMA table_info(permissions)')->fetchAll(PDO::FETCH_ASSOC),
+		'name'
+	);
+	if (!in_array('description', $permCols)) {
+		$pdo->exec('ALTER TABLE permissions ADD COLUMN description TEXT');
+		$done[] = 'permissions.description (добавлена колонка)';
+	}
+>>>>>>> Stashed changes
     $newPerms = [
         ['manage_templates',     'Управление шаблонами заявок'],
         ['view_nsi',             'Просмотр справочников НСИ'],
