@@ -167,14 +167,25 @@ try {
 
     // ----------------------------------------------------------------
     // 7. Новые permissions
+    // fix: таблица permissions может не содержать колонку description — добавляем при необходимости
     // ----------------------------------------------------------------
+    $permCols = array_column(
+        $pdo->query('PRAGMA table_info(permissions)')->fetchAll(PDO::FETCH_ASSOC),
+        'name'
+    );
+    if (!in_array('description', $permCols)) {
+        $pdo->exec('ALTER TABLE permissions ADD COLUMN description TEXT');
+        $done[] = 'permissions.description (добавлена колонка)';
+    }
+
     $newPerms = [
-        ['manage_templates',    'Управление шаблонами заявок'],
-        ['view_nsi',            'Просмотр справочников НСИ'],
-        ['manage_nsi',          'Управление справочниками НСИ'],
-        ['view_all_requests',   'Видеть все заявки (без фильтра)'],
+        ['manage_templates',     'Управление шаблонами заявок'],
+        ['view_nsi',             'Просмотр справочников НСИ'],
+        ['manage_nsi',           'Управление справочниками НСИ'],
+        ['view_all_requests',    'Видеть все заявки (без фильтра)'],
         ['manage_request_access','Управление доступом к категориям заявок'],
     ];
+    // fix: используем prepare/execute вместо интерполяции строки в SQL
     $stmtIns = $pdo->prepare('INSERT OR IGNORE INTO permissions (name, description) VALUES (?, ?)');
     foreach ($newPerms as [$name, $desc]) {
         $stmtIns->execute([$name, $desc]);
@@ -185,8 +196,10 @@ try {
     $adminRole = $pdo->query("SELECT id FROM roles WHERE LOWER(name)='администратор' LIMIT 1")->fetch(PDO::FETCH_ASSOC);
     if ($adminRole) {
         $rid = (int)$adminRole['id'];
+        $stmtPid = $pdo->prepare('SELECT id FROM permissions WHERE name = ? LIMIT 1');
         foreach ($newPerms as [$name]) {
-            $pid = $pdo->query("SELECT id FROM permissions WHERE name='$name' LIMIT 1")->fetchColumn();
+            $stmtPid->execute([$name]);
+            $pid = $stmtPid->fetchColumn();
             if ($pid) {
                 $pdo->exec("INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ($rid, $pid)");
             }
