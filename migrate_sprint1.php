@@ -170,6 +170,7 @@ try {
     // fix: таблица permissions может не содержать колонку description — добавляем при необходимости
     // ----------------------------------------------------------------
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     $permCols = array_column(
         $pdo->query('PRAGMA table_info(permissions)')->fetchAll(PDO::FETCH_ASSOC),
         'name'
@@ -180,6 +181,8 @@ try {
     }
 
 =======
+=======
+>>>>>>> Stashed changes
 	$permCols = array_column(
 		$pdo->query('PRAGMA table_info(permissions)')->fetchAll(PDO::FETCH_ASSOC),
 		'name'
@@ -188,6 +191,9 @@ try {
 		$pdo->exec('ALTER TABLE permissions ADD COLUMN description TEXT');
 		$done[] = 'permissions.description (добавлена колонка)';
 	}
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     $newPerms = [
         ['manage_templates',     'Управление шаблонами заявок'],
