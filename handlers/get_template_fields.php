@@ -1,10 +1,9 @@
 <?php
 /**
  * AJAX: Возвращает поля шаблона для динамической формы создания заявки
+ * Контекст ($pdo, isLoggedIn, jsonError, jsonSuccess) предоставляется config.php
  */
 require_once __DIR__ . '/../config.php';
-require_once __DIR__ . '/../core/auth.php';
-require_once __DIR__ . '/../core/db.php';
 
 if (!isLoggedIn()) { jsonError('Не авторизован', 401); }
 
